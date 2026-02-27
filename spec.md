@@ -2,50 +2,58 @@
 
 ## Current State
 
-- Aandelen en Crypto sectie met FIFO-berekeningen per asset
-- Jaaroverzicht tabblad met statistieken per jaar (geïnvesteerd, verkopen, kosten, gerealiseerd, ongerealiseerd, TER, netto rendement)
-- TER (Total Expense Ratio) instelbaar per asset (aandelen), opgeslagen in localStorage
-- Lopende kosten per transactie: checkbox `hasOngoingCosts` bepaalt welke transacties meetellen voor TER
-- Actuele waarde wordt getoond zowel op asset-niveau als in de transactietabel op de jaaroverzichtpagina
-- Crypto heeft geen TER, maar de lopende kosten checkbox is nog zichtbaar in het transactieformulier ongeacht asset type
-- In het jaaroverzicht ontbreekt een kolom "Lopende kosten (transactie)"
-- In het jaaroverzicht staat geen subtotaalregel voor lopende kosten per transactie
+De app heeft een zijnavigatie met: Aandelen, Crypto, Grondstoffen, Leningen, Jaaroverzicht, Instellingen.
+Elke sectie heeft zijn eigen pagina. Er is geen aparte landingspagina / dashboard-overzicht van de volledige portefeuille.
+Er bestaat al een `Dashboard.tsx` component, maar dit is een per-sectie samenvatting (5 kaartjes met stats), geen portefeuille-brede landingspagina.
+Grafieken zijn nergens aanwezig. De `recharts` library is nog niet geïnstalleerd.
+
+Data beschikbaar:
+- `useAllAssets()` → `AssetView[]` met transacties en currentPrice
+- `useAllLoans()` → `LoanView[]` met lening-transacties
+- `useCommodities()` → `commodityTickers: Set<string>` (welke tickers grondstoffen zijn)
+- `useTer()` → `terMap` (TER percentages per ticker)
+- FIFO-berekeningen via `calculateFifo(transactions, currentPrice)`
+- LoanTransactionType: `interestReceived` en `repaymentReceived`
 
 ## Requested Changes (Diff)
 
 ### Add
-- Lopende kosten (TER) berekend per transactie: voor elke transactie met `hasOngoingCosts === true` wordt het jaarlijkse TER-bedrag berekend op basis van de aankoopwaarde van die transactie (aantal × pricePerUnit × terPercentage). Dit wordt zichtbaar in de transactietabel van de betreffende asset (TransactionHistory).
-- In het jaaroverzicht: een aparte kolom/regel "Lopende kosten transactie" die de som is van alle TER-kosten per transactie in het betreffende jaar.
-- In het jaaroverzicht een totaalregel onderaan die alle transacties + bijbehorende lopende kosten optelt voor het gekozen jaar.
+
+- **Nieuw tabblad "Dashboard"** — bovenaan de navigatielijst (eerste item), als landingspagina
+- **Nieuw component `PortfolioDashboard.tsx`** met:
+  1. **Totaalkaart** (bovenaan): totaal geïnvesteerd, totale actuele waarde, gerealiseerd rendement, ongerealiseerd rendement, totaal rendement (€ en %). Groen bij positief, rood bij negatief.
+  2. **Vier categorie-kaarten** (naast elkaar in een grid): Aandelen, Crypto, Grondstoffen, Leningen. Elk met relevante stats. Klikken navigeert naar het betreffende tabblad.
+  3. **Grafiek 1 — Portefeuillewaarde over tijd** (lijndiagram): totale waarde per maand, filter: 3M/6M/1J/Alles. Waarde wordt berekend op basis van cumulatieve inleg minus verkopen + gerealiseerde winst als benadering (zonder historische prijsdata). Let op: Recharts moet worden geïnstalleerd.
+  4. **Grafiek 2 — Verdeling portefeuille** (donut diagram): huidige waarde per categorie in %.
+  5. **Grafiek 3 — Gerealiseerd rendement per categorie per jaar** (gegroepeerd staafdiagram): per jaar, naast elkaar per categorie.
+  6. **Grafiek 4 — Rendement vergelijking** (horizontaal staafdiagram): totaal rendement % per categorie.
+  7. **Recente transacties** (onderaan): de 8 meest recente transacties over alle categorieën. Kolommen: datum, categorie, naam, type, bedrag. Klikken navigeert naar het betreffende tabblad.
+  8. **Lege staat**: als er geen transacties zijn, toon: "Voeg je eerste transactie toe om je overzicht te zien."
+- **Dashboard sectie-ID** toevoegen aan de `Section` type in `App.tsx`
 
 ### Modify
-- `AddTransactionDialog` en `EditTransactionDialog`: de checkbox "Lopende kosten van toepassing" wordt alleen getoond voor aandelen (AssetType.stock), niet voor crypto.
-- `AssetsList` (TransactionHistory): voeg een kolom "Lopende kosten" toe per transactie die `hasOngoingCosts === true` is, gebaseerd op het TER-percentage van de asset × aankoopwaarde van de transactie.
-- `YearOverview`: voeg in de transactietabel een kolom "Lopende kosten" toe per rij (voor transacties met `hasOngoingCosts === true`).
-- `YearOverview`: voeg een totaalrij toe onderaan de transactietabel met de som van alle aankopen, kosten en lopende kosten per jaar.
-- `YearOverview` stats grid: toon de "Lopende kosten (transacties)" als apart StatCard naast de bestaande TER.
-- Actuele waarde verwijderen uit de transactietabel van het jaaroverzicht (het staat al op asset-niveau in de AssetsList).
+
+- **`App.tsx`**: 
+  - `Section` type uitbreiden met `"dashboard"`
+  - SECTIONS array: "Dashboard" als eerste item toevoegen (met LayoutDashboard of PieChart icoon)
+  - Standaard actieve sectie wijzigen van `"stocks"` naar `"dashboard"`
+  - Conditionele rendering uitbreiden met `isDashboard` case die `PortfolioDashboard` toont
+  - `PortfolioDashboard` ontvangt `assets`, `loans`, `commodityTickers`, `terMap` props en een `onNavigate` callback
 
 ### Remove
-- "Huidige waarde" kolom uit het jaaroverzicht transactietabel (actuele waarde staat al per asset in de AssetsList).
+
+Niets verwijderd.
 
 ## Implementation Plan
 
-1. Maak een utility functie `computeTransactionTer(tx, ter)` die voor een transactie met `hasOngoingCosts` het jaarlijkse TER-bedrag berekent: `quantity × pricePerUnit × (ter / 100)`.
-2. Update `TransactionHistory` component: voeg een kolom "Lopende kosten" toe die per transactie de TER-kosten toont als `hasOngoingCosts` actief is en het asset een TER heeft. Geef `terMap` en `ticker` door als props.
-3. Update `AssetsList` om `terMap` door te geven aan `TransactionHistory`.
-4. Update `AddTransactionDialog`: verberg de "Lopende kosten" checkbox voor crypto assets (alleen tonen voor `AssetType.stock`).
-5. Update `EditTransactionDialog`: zelfde aanpassing als AddTransactionDialog.
-6. Update `YearOverview`:
-   - Voeg kolom "Lopende kosten" toe in de transactietabel per transactie (gebaseerd op `hasOngoingCosts` + terMap).
-   - Verwijder actuele waarde kolom.
-   - Voeg een totaalrij toe onder de transactietabel.
-   - Voeg een StatCard toe voor "Lopende kosten (transacties)" die de som toont van alle per-transactie TER-kosten in het jaar.
-   - Pas `netReturn` berekening aan zodat ook de per-transactie TER-kosten worden afgetrokken.
-
-## UX Notes
-
-- Lopende kosten per transactie = jaarlijkse kosten op basis van de aankoopwaarde; weergegeven als negatief getal (kosten).
-- De checkbox in het transactieformulier is niet zichtbaar voor crypto assets.
-- Totaalrij in de transactietabel toont: totaal geïnvesteerd, totaal kosten, totaal lopende kosten voor het jaar.
-- Actuele waarde is alleen zichtbaar op asset-niveau (AssetsList), niet meer in het jaaroverzicht transactietabel.
+1. Installeer `recharts` package via pnpm in de frontend
+2. Maak `src/frontend/src/components/PortfolioDashboard.tsx`:
+   - Bereken per categorie: stocks = assets waar assetType=stock EN niet in commodityTickers, crypto = assetType=crypto, commodities = assetType=stock EN in commodityTickers
+   - Totaalkaart: som over alle assets van calculateFifo resultaten + loans
+   - Categorie-kaarten: 4 kaarten met per-categorie stats, klikbaar
+   - Grafiek 1 (lijn): bouw maandpunten op basis van transactiedatums — cumulatief berekend netto vermogen per maand (inleg - kostenbasis verkopen + gerealiseerd + current value). Gebruik een gesimplificeerde benadering: per maand = totale inleg t/m die maand + gerealiseerd t/m die maand + actuele waarde op dat moment (gebruik currentPrice als benadering voor alle maanden). Filter knoppen: 3M, 6M, 1J, Alles.
+   - Grafiek 2 (donut): huidige waarde per categorie
+   - Grafiek 3 (gegroepeerd staaf): gerealiseerde winst per categorie per jaar
+   - Grafiek 4 (horizontale staaf): totaal rendement % per categorie
+   - Recente transacties: verzamel alle transacties over alle assets + loan-transacties, sorteer op datum descending, neem top 8
+3. Update `App.tsx`: dashboard als eerste tab, standaard actief, renderen van PortfolioDashboard

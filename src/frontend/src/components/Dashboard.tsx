@@ -19,7 +19,7 @@ function computeSummary(assets: AssetView[]): PortfolioSummary {
 
   for (const asset of assets) {
     const fifo = calculateFifo(asset.transactions, asset.currentPrice);
-    totalInvested += fifo.invested;
+    totalInvested += fifo.netInvested;
     totalCurrentValue += fifo.currentQuantity * asset.currentPrice;
     totalRealized += fifo.realized;
     totalUnrealized += fifo.unrealized;
@@ -88,7 +88,7 @@ export function Dashboard({ assets, isLoading }: DashboardProps) {
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
       <SummaryCard
-        label="Geïnvesteerd"
+        label="Inleg"
         icon={<Wallet className="w-4 h-4" />}
         value={<MoneyValue amount={summary.totalInvested} className="text-xl font-semibold" />}
         delay={0}

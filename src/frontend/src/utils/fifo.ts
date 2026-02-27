@@ -6,6 +6,7 @@ export interface FifoResult {
   currentQuantity: number;
   costBasis: number; // total cost basis of remaining holdings
   invested: number; // total invested (buy cost + fees)
+  netInvested: number; // invested minus the cost-basis of all sold units (original inleg not yet recovered)
 }
 
 interface FifoLot {
@@ -26,6 +27,7 @@ export function calculateFifo(
   const lots: FifoLot[] = [];
   let realized = 0;
   let totalInvested = 0;
+  let totalCostOfSold = 0;
 
   for (const tx of sorted) {
     if (tx.transactionType === TransactionType.buy) {
@@ -60,14 +62,19 @@ export function calculateFifo(
         }
       }
 
+      totalCostOfSold += costOfSold;
       realized += saleRevenue - costOfSold;
     } else if (tx.transactionType === TransactionType.stakingReward) {
-      // Staking rewards: added at cost basis of 0
+      // Staking rewards: added at cost basis of 0; euroValue at receipt counts as realized profit
       lots.push({
         quantity: tx.quantity,
         pricePerUnit: 0,
         fees: 0,
       });
+      realized += tx.euroValue ?? 0;
+    } else if (tx.transactionType === TransactionType.dividend) {
+      // Dividend: counts as realized profit; no change to lots or totalInvested
+      realized += tx.euroValue ?? 0;
     }
   }
 
@@ -79,12 +86,16 @@ export function calculateFifo(
   );
   const unrealized = currentQuantity * currentPrice - costBasis;
 
+  // netInvested = original inleg minus the cost-basis of all sold units (= inleg not yet recovered)
+  const netInvested = Math.max(0, totalInvested - totalCostOfSold);
+
   return {
     realized,
     unrealized,
     currentQuantity,
     costBasis,
     invested: totalInvested,
+    netInvested,
   };
 }
 

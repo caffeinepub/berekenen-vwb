@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useActor } from "./useActor";
-import { AssetType, AssetView, TransactionView } from "../backend.d";
+import { AssetType, AssetView, TransactionView, LoanView, LoanStatus, LoanTransactionType } from "../backend.d";
 
 // ─── Queries ────────────────────────────────────────────────────────────────
 
@@ -188,3 +188,156 @@ export function useUpdateTransaction() {
     },
   });
 }
+
+// ─── Loans ───────────────────────────────────────────────────────────────────
+
+export function useAllLoans() {
+  const { actor, isFetching } = useActor();
+  return useQuery<LoanView[]>({
+    queryKey: ["loans"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getAllLoans();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useAddLoan() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      name,
+      startDate,
+      loanedAmount,
+      interestRatePercent,
+      endDate,
+      durationMonths,
+      notes,
+    }: {
+      name: string;
+      startDate: bigint;
+      loanedAmount: number;
+      interestRatePercent?: number;
+      endDate?: bigint;
+      durationMonths?: bigint;
+      notes?: string;
+    }) => {
+      if (!actor) throw new Error("No actor");
+      return actor.addLoan(
+        name,
+        startDate,
+        loanedAmount,
+        interestRatePercent ?? null,
+        endDate ?? null,
+        durationMonths ?? null,
+        notes ?? null
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
+    },
+  });
+}
+
+export function useUpdateLoan() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      name,
+      startDate,
+      loanedAmount,
+      interestRatePercent,
+      endDate,
+      durationMonths,
+      notes,
+      status,
+    }: {
+      id: bigint;
+      name: string;
+      startDate: bigint;
+      loanedAmount: number;
+      interestRatePercent?: number;
+      endDate?: bigint;
+      durationMonths?: bigint;
+      notes?: string;
+      status: LoanStatus;
+    }) => {
+      if (!actor) throw new Error("No actor");
+      return actor.updateLoan(
+        id,
+        name,
+        startDate,
+        loanedAmount,
+        interestRatePercent ?? null,
+        endDate ?? null,
+        durationMonths ?? null,
+        notes ?? null,
+        status
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
+    },
+  });
+}
+
+export function useDeleteLoan() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: bigint) => {
+      if (!actor) throw new Error("No actor");
+      return actor.deleteLoan(id);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
+    },
+  });
+}
+
+export function useAddLoanTransaction() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      loanId,
+      transactionType,
+      date,
+      amount,
+      notes,
+    }: {
+      loanId: bigint;
+      transactionType: LoanTransactionType;
+      date: bigint;
+      amount: number;
+      notes?: string;
+    }) => {
+      if (!actor) throw new Error("No actor");
+      return actor.addLoanTransaction(loanId, transactionType, date, amount, notes ?? null);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
+    },
+  });
+}
+
+export function useDeleteLoanTransaction() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ loanId, txId }: { loanId: bigint; txId: bigint }) => {
+      if (!actor) throw new Error("No actor");
+      return actor.deleteLoanTransaction(loanId, txId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["loans"] });
+    },
+  });
+}
+
+// Re-export types for convenience
+export type { LoanView, LoanStatus, LoanTransactionType };

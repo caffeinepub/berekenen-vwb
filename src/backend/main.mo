@@ -2,13 +2,12 @@ import Time "mo:core/Time";
 import Text "mo:core/Text";
 import Map "mo:core/Map";
 import List "mo:core/List";
-import Iter "mo:core/Iter";
-import Int "mo:core/Int";
+import Nat "mo:core/Nat";
 import Float "mo:core/Float";
-import Runtime "mo:core/Runtime";
+import Int "mo:core/Int";
+import Iter "mo:core/Iter";
 import Array "mo:core/Array";
-
-
+import Runtime "mo:core/Runtime";
 
 actor {
   // Public type definitions
@@ -21,6 +20,18 @@ actor {
     #buy;
     #sell;
     #stakingReward;
+    #dividend;
+  };
+
+  type LoanTransactionType = {
+    #interestReceived;
+    #repaymentReceived;
+  };
+
+  type LoanStatus = {
+    #active;
+    #repaid;
+    #defaulted;
   };
 
   public type AssetView = {
@@ -32,7 +43,7 @@ actor {
   };
 
   public type TransactionView = {
-    asset : Text; // Ticker symbol
+    asset : Text;
     date : Time.Time;
     transactionType : TransactionType;
     quantity : Float;
@@ -40,6 +51,7 @@ actor {
     fees : ?Float;
     hasOngoingCosts : ?Bool;
     notes : ?Text;
+    euroValue : ?Float;
   };
 
   public type StakingRewardView = {
@@ -52,6 +64,28 @@ actor {
     price : Float;
   };
 
+  public type LoanTransactionView = {
+    id : Nat;
+    loanId : Nat;
+    transactionType : LoanTransactionType;
+    date : Time.Time;
+    amount : Float;
+    notes : ?Text;
+  };
+
+  public type LoanView = {
+    id : Nat;
+    name : Text;
+    startDate : Time.Time;
+    loanedAmount : Float;
+    interestRatePercent : ?Float;
+    endDate : ?Time.Time;
+    durationMonths : ?Nat;
+    notes : ?Text;
+    status : LoanStatus;
+    transactions : [LoanTransactionView];
+  };
+
   // Internal type definitions
   type Asset = {
     name : Text;
@@ -62,7 +96,7 @@ actor {
   };
 
   type Transaction = {
-    asset : Text; // Ticker symbol
+    asset : Text;
     date : Time.Time;
     transactionType : TransactionType;
     quantity : Float;
@@ -70,6 +104,7 @@ actor {
     fees : ?Float;
     hasOngoingCosts : ?Bool;
     notes : ?Text;
+    euroValue : ?Float;
   };
 
   type StakingReward = {
@@ -82,10 +117,36 @@ actor {
     price : Float;
   };
 
+  type LoanTransaction = {
+    id : Nat;
+    loanId : Nat;
+    transactionType : LoanTransactionType;
+    date : Time.Time;
+    amount : Float;
+    notes : ?Text;
+  };
+
+  type Loan = {
+    id : Nat;
+    name : Text;
+    startDate : Time.Time;
+    loanedAmount : Float;
+    interestRatePercent : ?Float;
+    endDate : ?Time.Time;
+    durationMonths : ?Nat;
+    notes : ?Text;
+    status : LoanStatus;
+    transactions : List.List<LoanTransaction>;
+  };
+
   // Data storage
   let assets = Map.empty<Text, Asset>();
   let stakingRewards = Map.empty<Text, List.List<StakingReward>>();
   let historicalData = Map.empty<Text, List.List<AssetHistory>>();
+  let loans = Map.empty<Nat, Loan>();
+
+  var nextLoanId = 0;
+  var nextLoanTxId = 0;
 
   // Conversion functions
   func toAssetView(asset : Asset) : AssetView {
@@ -109,6 +170,7 @@ actor {
       fees = transaction.fees;
       hasOngoingCosts = transaction.hasOngoingCosts;
       notes = transaction.notes;
+      euroValue = transaction.euroValue;
     };
   };
 
@@ -126,25 +188,42 @@ actor {
     };
   };
 
-  // Asset management
-  public shared ({ caller }) func addAsset(name : Text, ticker : Text, assetType : AssetType, currentPrice : Float) : async () {
-    var transactions = List.empty<Transaction>();
-
-    switch (assets.get(ticker)) {
-      case (?existingAsset) {
-        transactions := existingAsset.transactions;
-      };
-      case (null) {};
+  func toLoanTransactionView(loanTx : LoanTransaction) : LoanTransactionView {
+    {
+      id = loanTx.id;
+      loanId = loanTx.loanId;
+      transactionType = loanTx.transactionType;
+      date = loanTx.date;
+      amount = loanTx.amount;
+      notes = loanTx.notes;
     };
+  };
 
+  func toLoanView(loan : Loan) : LoanView {
+    let txs = loan.transactions.toArray().map(func(tx) { toLoanTransactionView(tx) });
+    {
+      id = loan.id;
+      name = loan.name;
+      startDate = loan.startDate;
+      loanedAmount = loan.loanedAmount;
+      interestRatePercent = loan.interestRatePercent;
+      endDate = loan.endDate;
+      durationMonths = loan.durationMonths;
+      notes = loan.notes;
+      status = loan.status;
+      transactions = txs;
+    };
+  };
+
+  // Asset management functions
+  public shared ({ caller }) func addAsset(name : Text, ticker : Text, assetType : AssetType, currentPrice : Float) : async () {
     let asset = {
       name;
       ticker;
       assetType;
       currentPrice;
-      transactions;
+      transactions = List.empty<Transaction>();
     };
-
     assets.add(ticker, asset);
   };
 
@@ -199,6 +278,7 @@ actor {
       fees = transaction.fees;
       hasOngoingCosts = transaction.hasOngoingCosts;
       notes = transaction.notes;
+      euroValue = transaction.euroValue;
     };
 
     switch (assets.get(transaction.asset)) {
@@ -214,13 +294,13 @@ actor {
     switch (assets.get(ticker)) {
       case (null) { Runtime.trap("Asset does not exist") };
       case (?asset) {
-        let transactions = asset.transactions.toArray();
-        if (index >= transactions.size()) {
+        let transactionsArray = asset.transactions.toArray();
+        if (index >= transactionsArray.size()) {
           Runtime.trap("Transaction does not exist");
         };
 
         let updatedTransactions = Array.tabulate(
-          transactions.size(),
+          transactionsArray.size(),
           func(i) {
             if (i == index) {
               {
@@ -232,9 +312,10 @@ actor {
                 fees = transaction.fees;
                 hasOngoingCosts = transaction.hasOngoingCosts;
                 notes = transaction.notes;
+                euroValue = transaction.euroValue;
               };
             } else {
-              transactions[i];
+              transactionsArray[i];
             };
           },
         );
@@ -252,15 +333,15 @@ actor {
     switch (assets.get(ticker)) {
       case (null) { Runtime.trap("Asset does not exist") };
       case (?asset) {
-        let transactions = asset.transactions.toArray();
-        if (index >= transactions.size()) {
+        let transactionsArray = asset.transactions.toArray();
+        if (index >= transactionsArray.size()) {
           Runtime.trap("Transaction does not exist");
         };
 
         let filteredTransactions = Array.tabulate(
-          transactions.size() - 1,
+          transactionsArray.size() - 1,
           func(i) {
-            if (i < index) { transactions[i] } else { transactions[i + 1] };
+            if (i < index) { transactionsArray[i] } else { transactionsArray[i + 1] };
           },
         );
 
@@ -345,6 +426,121 @@ actor {
             Int.compare(a1.timestamp, a2.timestamp);
           }
         ).map(func(history) { toAssetHistoryView(history) });
+      };
+    };
+  };
+
+  // Loan management functions
+
+  public shared ({ caller }) func addLoan(
+    name : Text,
+    startDate : Time.Time,
+    loanedAmount : Float,
+    interestRatePercent : ?Float,
+    endDate : ?Time.Time,
+    durationMonths : ?Nat,
+    notes : ?Text,
+  ) : async Nat {
+    let id = nextLoanId;
+    nextLoanId += 1;
+
+    let loan = {
+      id;
+      name;
+      startDate;
+      loanedAmount;
+      interestRatePercent;
+      endDate;
+      durationMonths;
+      notes;
+      status = #active : LoanStatus;
+      transactions = List.empty<LoanTransaction>();
+    };
+
+    loans.add(id, loan);
+    id;
+  };
+
+  public shared ({ caller }) func updateLoan(
+    id : Nat,
+    name : Text,
+    startDate : Time.Time,
+    loanedAmount : Float,
+    interestRatePercent : ?Float,
+    endDate : ?Time.Time,
+    durationMonths : ?Nat,
+    notes : ?Text,
+    status : LoanStatus,
+  ) : async () {
+    switch (loans.get(id)) {
+      case (null) { Runtime.trap("Loan does not exist") };
+      case (?existingLoan) {
+        let updatedLoan = {
+          id;
+          name;
+          startDate;
+          loanedAmount;
+          interestRatePercent;
+          endDate;
+          durationMonths;
+          notes;
+          status;
+          transactions = existingLoan.transactions;
+        };
+        loans.add(id, updatedLoan);
+      };
+    };
+  };
+
+  public shared ({ caller }) func deleteLoan(id : Nat) : async () {
+    if (not loans.containsKey(id)) {
+      Runtime.trap("Loan does not exist");
+    };
+    loans.remove(id);
+  };
+
+  public query ({ caller }) func getAllLoans() : async [LoanView] {
+    loans.values().map(func(loan) { toLoanView(loan) }).toArray();
+  };
+
+  public shared ({ caller }) func addLoanTransaction(
+    loanId : Nat,
+    transactionType : LoanTransactionType,
+    date : Time.Time,
+    amount : Float,
+    notes : ?Text,
+  ) : async Nat {
+    switch (loans.get(loanId)) {
+      case (null) { Runtime.trap("Loan does not exist") };
+      case (?loan) {
+        let txId = nextLoanTxId;
+        nextLoanTxId += 1;
+
+        let loanTransaction = {
+          id = txId;
+          loanId;
+          transactionType;
+          date;
+          amount;
+          notes;
+        };
+
+        loan.transactions.add(loanTransaction);
+        loans.add(loanId, loan);
+        txId;
+      };
+    };
+  };
+
+  public shared ({ caller }) func deleteLoanTransaction(loanId : Nat, txId : Nat) : async () {
+    switch (loans.get(loanId)) {
+      case (null) { Runtime.trap("Loan does not exist") };
+      case (?loan) {
+        let transactionsArray = loan.transactions.toArray();
+        let filteredTransactions = transactionsArray.filter(func(tx) { tx.id != txId });
+        let newTransactions = List.fromArray<LoanTransaction>(filteredTransactions);
+        let updatedLoan = { loan with transactions = newTransactions };
+        loans.add(loanId, updatedLoan);
       };
     };
   };

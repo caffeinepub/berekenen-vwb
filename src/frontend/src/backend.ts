@@ -96,6 +96,14 @@ export interface AssetView {
     assetType: AssetType;
     transactions: Array<TransactionView>;
 }
+export interface LoanTransactionView {
+    id: bigint;
+    transactionType: LoanTransactionType;
+    date: Time;
+    loanId: bigint;
+    notes?: string;
+    amount: number;
+}
 export type Time = bigint;
 export interface AssetHistoryView {
     timestamp: Time;
@@ -105,7 +113,20 @@ export interface StakingRewardView {
     date: Time;
     quantity: number;
 }
+export interface LoanView {
+    id: bigint;
+    status: LoanStatus;
+    endDate?: Time;
+    name: string;
+    durationMonths?: bigint;
+    notes?: string;
+    interestRatePercent?: number;
+    transactions: Array<LoanTransactionView>;
+    loanedAmount: number;
+    startDate: Time;
+}
 export interface TransactionView {
+    euroValue?: number;
     transactionType: TransactionType;
     asset: string;
     date: Time;
@@ -119,27 +140,43 @@ export enum AssetType {
     stock = "stock",
     crypto = "crypto"
 }
+export enum LoanStatus {
+    repaid = "repaid",
+    active = "active",
+    defaulted = "defaulted"
+}
+export enum LoanTransactionType {
+    interestReceived = "interestReceived",
+    repaymentReceived = "repaymentReceived"
+}
 export enum TransactionType {
     buy = "buy",
+    dividend = "dividend",
     sell = "sell",
     stakingReward = "stakingReward"
 }
 export interface backendInterface {
     addAsset(name: string, ticker: string, assetType: AssetType, currentPrice: number): Promise<void>;
     addHistoricalData(asset: string, timestamp: Time, price: number): Promise<void>;
+    addLoan(name: string, startDate: Time, loanedAmount: number, interestRatePercent: number | null, endDate: Time | null, durationMonths: bigint | null, notes: string | null): Promise<bigint>;
+    addLoanTransaction(loanId: bigint, transactionType: LoanTransactionType, date: Time, amount: number, notes: string | null): Promise<bigint>;
     addStakingReward(asset: string, date: Time, quantity: number): Promise<void>;
     addTransaction(transaction: TransactionView): Promise<void>;
     deleteAsset(ticker: string): Promise<void>;
+    deleteLoan(id: bigint): Promise<void>;
+    deleteLoanTransaction(loanId: bigint, txId: bigint): Promise<void>;
     deleteTransaction(ticker: string, index: bigint): Promise<void>;
     getAllAssets(): Promise<Array<AssetView>>;
+    getAllLoans(): Promise<Array<LoanView>>;
     getAsset(ticker: string): Promise<AssetView>;
     getHistoricalData(asset: string): Promise<Array<AssetHistoryView>>;
     getStakingRewards(asset: string): Promise<Array<StakingRewardView>>;
     getTransactions(asset: string): Promise<Array<TransactionView>>;
     updateAsset(ticker: string, name: string, assetType: AssetType, currentPrice: number): Promise<void>;
+    updateLoan(id: bigint, name: string, startDate: Time, loanedAmount: number, interestRatePercent: number | null, endDate: Time | null, durationMonths: bigint | null, notes: string | null, status: LoanStatus): Promise<void>;
     updateTransaction(ticker: string, index: bigint, transaction: TransactionView): Promise<void>;
 }
-import type { AssetType as _AssetType, AssetView as _AssetView, Time as _Time, TransactionType as _TransactionType, TransactionView as _TransactionView } from "./declarations/backend.did.d.ts";
+import type { AssetType as _AssetType, AssetView as _AssetView, LoanStatus as _LoanStatus, LoanTransactionType as _LoanTransactionType, LoanTransactionView as _LoanTransactionView, LoanView as _LoanView, Time as _Time, TransactionType as _TransactionType, TransactionView as _TransactionView } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async addAsset(arg0: string, arg1: string, arg2: AssetType, arg3: number): Promise<void> {
@@ -170,6 +207,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async addLoan(arg0: string, arg1: Time, arg2: number, arg3: number | null, arg4: Time | null, arg5: bigint | null, arg6: string | null): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addLoan(arg0, arg1, arg2, to_candid_opt_n3(this._uploadFile, this._downloadFile, arg3), to_candid_opt_n4(this._uploadFile, this._downloadFile, arg4), to_candid_opt_n5(this._uploadFile, this._downloadFile, arg5), to_candid_opt_n6(this._uploadFile, this._downloadFile, arg6));
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addLoan(arg0, arg1, arg2, to_candid_opt_n3(this._uploadFile, this._downloadFile, arg3), to_candid_opt_n4(this._uploadFile, this._downloadFile, arg4), to_candid_opt_n5(this._uploadFile, this._downloadFile, arg5), to_candid_opt_n6(this._uploadFile, this._downloadFile, arg6));
+            return result;
+        }
+    }
+    async addLoanTransaction(arg0: bigint, arg1: LoanTransactionType, arg2: Time, arg3: number, arg4: string | null): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addLoanTransaction(arg0, to_candid_LoanTransactionType_n7(this._uploadFile, this._downloadFile, arg1), arg2, arg3, to_candid_opt_n6(this._uploadFile, this._downloadFile, arg4));
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addLoanTransaction(arg0, to_candid_LoanTransactionType_n7(this._uploadFile, this._downloadFile, arg1), arg2, arg3, to_candid_opt_n6(this._uploadFile, this._downloadFile, arg4));
+            return result;
+        }
+    }
     async addStakingReward(arg0: string, arg1: Time, arg2: number): Promise<void> {
         if (this.processError) {
             try {
@@ -187,14 +252,14 @@ export class Backend implements backendInterface {
     async addTransaction(arg0: TransactionView): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.addTransaction(to_candid_TransactionView_n3(this._uploadFile, this._downloadFile, arg0));
+                const result = await this.actor.addTransaction(to_candid_TransactionView_n9(this._uploadFile, this._downloadFile, arg0));
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.addTransaction(to_candid_TransactionView_n3(this._uploadFile, this._downloadFile, arg0));
+            const result = await this.actor.addTransaction(to_candid_TransactionView_n9(this._uploadFile, this._downloadFile, arg0));
             return result;
         }
     }
@@ -209,6 +274,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.deleteAsset(arg0);
+            return result;
+        }
+    }
+    async deleteLoan(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteLoan(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteLoan(arg0);
+            return result;
+        }
+    }
+    async deleteLoanTransaction(arg0: bigint, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteLoanTransaction(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteLoanTransaction(arg0, arg1);
             return result;
         }
     }
@@ -230,28 +323,42 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getAllAssets();
-                return from_candid_vec_n7(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n13(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getAllAssets();
-            return from_candid_vec_n7(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n13(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async getAllLoans(): Promise<Array<LoanView>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllLoans();
+                return from_candid_vec_n26(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllLoans();
+            return from_candid_vec_n26(this._uploadFile, this._downloadFile, result);
         }
     }
     async getAsset(arg0: string): Promise<AssetView> {
         if (this.processError) {
             try {
                 const result = await this.actor.getAsset(arg0);
-                return from_candid_AssetView_n8(this._uploadFile, this._downloadFile, result);
+                return from_candid_AssetView_n14(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getAsset(arg0);
-            return from_candid_AssetView_n8(this._uploadFile, this._downloadFile, result);
+            return from_candid_AssetView_n14(this._uploadFile, this._downloadFile, result);
         }
     }
     async getHistoricalData(arg0: string): Promise<Array<AssetHistoryView>> {
@@ -286,14 +393,14 @@ export class Backend implements backendInterface {
         if (this.processError) {
             try {
                 const result = await this.actor.getTransactions(arg0);
-                return from_candid_vec_n12(this._uploadFile, this._downloadFile, result);
+                return from_candid_vec_n18(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getTransactions(arg0);
-            return from_candid_vec_n12(this._uploadFile, this._downloadFile, result);
+            return from_candid_vec_n18(this._uploadFile, this._downloadFile, result);
         }
     }
     async updateAsset(arg0: string, arg1: string, arg2: AssetType, arg3: number): Promise<void> {
@@ -310,73 +417,75 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async updateTransaction(arg0: string, arg1: bigint, arg2: TransactionView): Promise<void> {
+    async updateLoan(arg0: bigint, arg1: string, arg2: Time, arg3: number, arg4: number | null, arg5: Time | null, arg6: bigint | null, arg7: string | null, arg8: LoanStatus): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.updateTransaction(arg0, arg1, to_candid_TransactionView_n3(this._uploadFile, this._downloadFile, arg2));
+                const result = await this.actor.updateLoan(arg0, arg1, arg2, arg3, to_candid_opt_n3(this._uploadFile, this._downloadFile, arg4), to_candid_opt_n4(this._uploadFile, this._downloadFile, arg5), to_candid_opt_n5(this._uploadFile, this._downloadFile, arg6), to_candid_opt_n6(this._uploadFile, this._downloadFile, arg7), to_candid_LoanStatus_n38(this._uploadFile, this._downloadFile, arg8));
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.updateTransaction(arg0, arg1, to_candid_TransactionView_n3(this._uploadFile, this._downloadFile, arg2));
+            const result = await this.actor.updateLoan(arg0, arg1, arg2, arg3, to_candid_opt_n3(this._uploadFile, this._downloadFile, arg4), to_candid_opt_n4(this._uploadFile, this._downloadFile, arg5), to_candid_opt_n5(this._uploadFile, this._downloadFile, arg6), to_candid_opt_n6(this._uploadFile, this._downloadFile, arg7), to_candid_LoanStatus_n38(this._uploadFile, this._downloadFile, arg8));
+            return result;
+        }
+    }
+    async updateTransaction(arg0: string, arg1: bigint, arg2: TransactionView): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateTransaction(arg0, arg1, to_candid_TransactionView_n9(this._uploadFile, this._downloadFile, arg2));
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateTransaction(arg0, arg1, to_candid_TransactionView_n9(this._uploadFile, this._downloadFile, arg2));
             return result;
         }
     }
 }
-function from_candid_AssetType_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AssetType): AssetType {
-    return from_candid_variant_n11(_uploadFile, _downloadFile, value);
+function from_candid_AssetType_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AssetType): AssetType {
+    return from_candid_variant_n17(_uploadFile, _downloadFile, value);
 }
-function from_candid_AssetView_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AssetView): AssetView {
-    return from_candid_record_n9(_uploadFile, _downloadFile, value);
+function from_candid_AssetView_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _AssetView): AssetView {
+    return from_candid_record_n15(_uploadFile, _downloadFile, value);
 }
-function from_candid_TransactionType_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _TransactionType): TransactionType {
-    return from_candid_variant_n16(_uploadFile, _downloadFile, value);
+function from_candid_LoanStatus_n29(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _LoanStatus): LoanStatus {
+    return from_candid_variant_n30(_uploadFile, _downloadFile, value);
 }
-function from_candid_TransactionView_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _TransactionView): TransactionView {
-    return from_candid_record_n14(_uploadFile, _downloadFile, value);
+function from_candid_LoanTransactionType_n36(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _LoanTransactionType): LoanTransactionType {
+    return from_candid_variant_n37(_uploadFile, _downloadFile, value);
 }
-function from_candid_opt_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [number]): number | null {
+function from_candid_LoanTransactionView_n34(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _LoanTransactionView): LoanTransactionView {
+    return from_candid_record_n35(_uploadFile, _downloadFile, value);
+}
+function from_candid_LoanView_n27(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _LoanView): LoanView {
+    return from_candid_record_n28(_uploadFile, _downloadFile, value);
+}
+function from_candid_TransactionType_n22(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _TransactionType): TransactionType {
+    return from_candid_variant_n23(_uploadFile, _downloadFile, value);
+}
+function from_candid_TransactionView_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _TransactionView): TransactionView {
+    return from_candid_record_n20(_uploadFile, _downloadFile, value);
+}
+function from_candid_opt_n21(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [number]): number | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n18(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [boolean]): boolean | null {
+function from_candid_opt_n24(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [boolean]): boolean | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n19(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [string]): string | null {
+function from_candid_opt_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [string]): string | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
-    transactionType: _TransactionType;
-    asset: string;
-    date: _Time;
-    fees: [] | [number];
-    pricePerUnit: number;
-    hasOngoingCosts: [] | [boolean];
-    notes: [] | [string];
-    quantity: number;
-}): {
-    transactionType: TransactionType;
-    asset: string;
-    date: Time;
-    fees?: number;
-    pricePerUnit: number;
-    hasOngoingCosts?: boolean;
-    notes?: string;
-    quantity: number;
-} {
-    return {
-        transactionType: from_candid_TransactionType_n15(_uploadFile, _downloadFile, value.transactionType),
-        asset: value.asset,
-        date: value.date,
-        fees: record_opt_to_undefined(from_candid_opt_n17(_uploadFile, _downloadFile, value.fees)),
-        pricePerUnit: value.pricePerUnit,
-        hasOngoingCosts: record_opt_to_undefined(from_candid_opt_n18(_uploadFile, _downloadFile, value.hasOngoingCosts)),
-        notes: record_opt_to_undefined(from_candid_opt_n19(_uploadFile, _downloadFile, value.notes)),
-        quantity: value.quantity
-    };
+function from_candid_opt_n31(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_Time]): Time | null {
+    return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_opt_n32(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [bigint]): bigint | null {
+    return value.length === 0 ? null : value[0];
+}
+function from_candid_record_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     currentPrice: number;
     ticker: string;
     name: string;
@@ -393,42 +502,178 @@ function from_candid_record_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint
         currentPrice: value.currentPrice,
         ticker: value.ticker,
         name: value.name,
-        assetType: from_candid_AssetType_n10(_uploadFile, _downloadFile, value.assetType),
-        transactions: from_candid_vec_n12(_uploadFile, _downloadFile, value.transactions)
+        assetType: from_candid_AssetType_n16(_uploadFile, _downloadFile, value.assetType),
+        transactions: from_candid_vec_n18(_uploadFile, _downloadFile, value.transactions)
     };
 }
-function from_candid_variant_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n20(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    euroValue: [] | [number];
+    transactionType: _TransactionType;
+    asset: string;
+    date: _Time;
+    fees: [] | [number];
+    pricePerUnit: number;
+    hasOngoingCosts: [] | [boolean];
+    notes: [] | [string];
+    quantity: number;
+}): {
+    euroValue?: number;
+    transactionType: TransactionType;
+    asset: string;
+    date: Time;
+    fees?: number;
+    pricePerUnit: number;
+    hasOngoingCosts?: boolean;
+    notes?: string;
+    quantity: number;
+} {
+    return {
+        euroValue: record_opt_to_undefined(from_candid_opt_n21(_uploadFile, _downloadFile, value.euroValue)),
+        transactionType: from_candid_TransactionType_n22(_uploadFile, _downloadFile, value.transactionType),
+        asset: value.asset,
+        date: value.date,
+        fees: record_opt_to_undefined(from_candid_opt_n21(_uploadFile, _downloadFile, value.fees)),
+        pricePerUnit: value.pricePerUnit,
+        hasOngoingCosts: record_opt_to_undefined(from_candid_opt_n24(_uploadFile, _downloadFile, value.hasOngoingCosts)),
+        notes: record_opt_to_undefined(from_candid_opt_n25(_uploadFile, _downloadFile, value.notes)),
+        quantity: value.quantity
+    };
+}
+function from_candid_record_n28(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    id: bigint;
+    status: _LoanStatus;
+    endDate: [] | [_Time];
+    name: string;
+    durationMonths: [] | [bigint];
+    notes: [] | [string];
+    interestRatePercent: [] | [number];
+    transactions: Array<_LoanTransactionView>;
+    loanedAmount: number;
+    startDate: _Time;
+}): {
+    id: bigint;
+    status: LoanStatus;
+    endDate?: Time;
+    name: string;
+    durationMonths?: bigint;
+    notes?: string;
+    interestRatePercent?: number;
+    transactions: Array<LoanTransactionView>;
+    loanedAmount: number;
+    startDate: Time;
+} {
+    return {
+        id: value.id,
+        status: from_candid_LoanStatus_n29(_uploadFile, _downloadFile, value.status),
+        endDate: record_opt_to_undefined(from_candid_opt_n31(_uploadFile, _downloadFile, value.endDate)),
+        name: value.name,
+        durationMonths: record_opt_to_undefined(from_candid_opt_n32(_uploadFile, _downloadFile, value.durationMonths)),
+        notes: record_opt_to_undefined(from_candid_opt_n25(_uploadFile, _downloadFile, value.notes)),
+        interestRatePercent: record_opt_to_undefined(from_candid_opt_n21(_uploadFile, _downloadFile, value.interestRatePercent)),
+        transactions: from_candid_vec_n33(_uploadFile, _downloadFile, value.transactions),
+        loanedAmount: value.loanedAmount,
+        startDate: value.startDate
+    };
+}
+function from_candid_record_n35(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    id: bigint;
+    transactionType: _LoanTransactionType;
+    date: _Time;
+    loanId: bigint;
+    notes: [] | [string];
+    amount: number;
+}): {
+    id: bigint;
+    transactionType: LoanTransactionType;
+    date: Time;
+    loanId: bigint;
+    notes?: string;
+    amount: number;
+} {
+    return {
+        id: value.id,
+        transactionType: from_candid_LoanTransactionType_n36(_uploadFile, _downloadFile, value.transactionType),
+        date: value.date,
+        loanId: value.loanId,
+        notes: record_opt_to_undefined(from_candid_opt_n25(_uploadFile, _downloadFile, value.notes)),
+        amount: value.amount
+    };
+}
+function from_candid_variant_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     stock: null;
 } | {
     crypto: null;
 }): AssetType {
     return "stock" in value ? AssetType.stock : "crypto" in value ? AssetType.crypto : value;
 }
-function from_candid_variant_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_variant_n23(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     buy: null;
+} | {
+    dividend: null;
 } | {
     sell: null;
 } | {
     stakingReward: null;
 }): TransactionType {
-    return "buy" in value ? TransactionType.buy : "sell" in value ? TransactionType.sell : "stakingReward" in value ? TransactionType.stakingReward : value;
+    return "buy" in value ? TransactionType.buy : "dividend" in value ? TransactionType.dividend : "sell" in value ? TransactionType.sell : "stakingReward" in value ? TransactionType.stakingReward : value;
 }
-function from_candid_vec_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_TransactionView>): Array<TransactionView> {
-    return value.map((x)=>from_candid_TransactionView_n13(_uploadFile, _downloadFile, x));
+function from_candid_variant_n30(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    repaid: null;
+} | {
+    active: null;
+} | {
+    defaulted: null;
+}): LoanStatus {
+    return "repaid" in value ? LoanStatus.repaid : "active" in value ? LoanStatus.active : "defaulted" in value ? LoanStatus.defaulted : value;
 }
-function from_candid_vec_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_AssetView>): Array<AssetView> {
-    return value.map((x)=>from_candid_AssetView_n8(_uploadFile, _downloadFile, x));
+function from_candid_variant_n37(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    interestReceived: null;
+} | {
+    repaymentReceived: null;
+}): LoanTransactionType {
+    return "interestReceived" in value ? LoanTransactionType.interestReceived : "repaymentReceived" in value ? LoanTransactionType.repaymentReceived : value;
+}
+function from_candid_vec_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_AssetView>): Array<AssetView> {
+    return value.map((x)=>from_candid_AssetView_n14(_uploadFile, _downloadFile, x));
+}
+function from_candid_vec_n18(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_TransactionView>): Array<TransactionView> {
+    return value.map((x)=>from_candid_TransactionView_n19(_uploadFile, _downloadFile, x));
+}
+function from_candid_vec_n26(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_LoanView>): Array<LoanView> {
+    return value.map((x)=>from_candid_LoanView_n27(_uploadFile, _downloadFile, x));
+}
+function from_candid_vec_n33(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_LoanTransactionView>): Array<LoanTransactionView> {
+    return value.map((x)=>from_candid_LoanTransactionView_n34(_uploadFile, _downloadFile, x));
 }
 function to_candid_AssetType_n1(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: AssetType): _AssetType {
     return to_candid_variant_n2(_uploadFile, _downloadFile, value);
 }
-function to_candid_TransactionType_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: TransactionType): _TransactionType {
-    return to_candid_variant_n6(_uploadFile, _downloadFile, value);
+function to_candid_LoanStatus_n38(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: LoanStatus): _LoanStatus {
+    return to_candid_variant_n39(_uploadFile, _downloadFile, value);
 }
-function to_candid_TransactionView_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: TransactionView): _TransactionView {
-    return to_candid_record_n4(_uploadFile, _downloadFile, value);
+function to_candid_LoanTransactionType_n7(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: LoanTransactionType): _LoanTransactionType {
+    return to_candid_variant_n8(_uploadFile, _downloadFile, value);
 }
-function to_candid_record_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function to_candid_TransactionType_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: TransactionType): _TransactionType {
+    return to_candid_variant_n12(_uploadFile, _downloadFile, value);
+}
+function to_candid_TransactionView_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: TransactionView): _TransactionView {
+    return to_candid_record_n10(_uploadFile, _downloadFile, value);
+}
+function to_candid_opt_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: number | null): [] | [number] {
+    return value === null ? candid_none() : candid_some(value);
+}
+function to_candid_opt_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Time | null): [] | [_Time] {
+    return value === null ? candid_none() : candid_some(value);
+}
+function to_candid_opt_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: bigint | null): [] | [bigint] {
+    return value === null ? candid_none() : candid_some(value);
+}
+function to_candid_opt_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: string | null): [] | [string] {
+    return value === null ? candid_none() : candid_some(value);
+}
+function to_candid_record_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+    euroValue?: number;
     transactionType: TransactionType;
     asset: string;
     date: Time;
@@ -438,6 +683,7 @@ function to_candid_record_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
     notes?: string;
     quantity: number;
 }): {
+    euroValue: [] | [number];
     transactionType: _TransactionType;
     asset: string;
     date: _Time;
@@ -448,7 +694,8 @@ function to_candid_record_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
     quantity: number;
 } {
     return {
-        transactionType: to_candid_TransactionType_n5(_uploadFile, _downloadFile, value.transactionType),
+        euroValue: value.euroValue ? candid_some(value.euroValue) : candid_none(),
+        transactionType: to_candid_TransactionType_n11(_uploadFile, _downloadFile, value.transactionType),
         asset: value.asset,
         date: value.date,
         fees: value.fees ? candid_some(value.fees) : candid_none(),
@@ -457,6 +704,25 @@ function to_candid_record_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
         notes: value.notes ? candid_some(value.notes) : candid_none(),
         quantity: value.quantity
     };
+}
+function to_candid_variant_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: TransactionType): {
+    buy: null;
+} | {
+    dividend: null;
+} | {
+    sell: null;
+} | {
+    stakingReward: null;
+} {
+    return value == TransactionType.buy ? {
+        buy: null
+    } : value == TransactionType.dividend ? {
+        dividend: null
+    } : value == TransactionType.sell ? {
+        sell: null
+    } : value == TransactionType.stakingReward ? {
+        stakingReward: null
+    } : value;
 }
 function to_candid_variant_n2(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: AssetType): {
     stock: null;
@@ -469,19 +735,30 @@ function to_candid_variant_n2(_uploadFile: (file: ExternalBlob) => Promise<Uint8
         crypto: null
     } : value;
 }
-function to_candid_variant_n6(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: TransactionType): {
-    buy: null;
+function to_candid_variant_n39(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: LoanStatus): {
+    repaid: null;
 } | {
-    sell: null;
+    active: null;
 } | {
-    stakingReward: null;
+    defaulted: null;
 } {
-    return value == TransactionType.buy ? {
-        buy: null
-    } : value == TransactionType.sell ? {
-        sell: null
-    } : value == TransactionType.stakingReward ? {
-        stakingReward: null
+    return value == LoanStatus.repaid ? {
+        repaid: null
+    } : value == LoanStatus.active ? {
+        active: null
+    } : value == LoanStatus.defaulted ? {
+        defaulted: null
+    } : value;
+}
+function to_candid_variant_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: LoanTransactionType): {
+    interestReceived: null;
+} | {
+    repaymentReceived: null;
+} {
+    return value == LoanTransactionType.interestReceived ? {
+        interestReceived: null
+    } : value == LoanTransactionType.repaymentReceived ? {
+        repaymentReceived: null
     } : value;
 }
 export interface CreateActorOptions {

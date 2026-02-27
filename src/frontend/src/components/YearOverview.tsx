@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
-import { AssetView, TransactionType, AssetType } from "../backend.d";
+import { toast } from "sonner";
+import { AssetView, TransactionType, AssetType, LoanView, LoanTransactionType } from "../backend.d";
+import { calculateFifo } from "../utils/fifo";
 import { formatEuro, formatDate, formatQuantity, formatPercent } from "../utils/format";
 import { MoneyValue, ReturnValue } from "./MoneyValue";
 import { TransactionTypeBadge } from "./AssetBadge";
@@ -31,15 +33,16 @@ import {
   Percent,
   FileSpreadsheet,
   FileText,
+  Coins,
+  Landmark,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import * as XLSX from "xlsx";
-import autoTable from "jspdf-autotable";
-import { jsPDF } from "jspdf";
 
 interface YearOverviewProps {
   assets: AssetView[];
   terMap: Record<string, number>;
+  commodityTickers?: Set<string>;
+  loans?: LoanView[];
 }
 
 interface YearStats {
@@ -48,8 +51,10 @@ interface YearStats {
   totalFees: number;
   realizedPnL: number;
   unrealizedPnL: number;
-  terCosts: number;
   txTerCosts: number;
+  totalDividend: number;
+  totalStaking: number;
+  totalLoanInterest: number;
   netReturn: number;
   netReturnPct: number;
 }
@@ -63,39 +68,10 @@ interface YearTransaction {
   quantity: number;
   pricePerUnit: number;
   fees?: number;
-  hasOngoingCosts?: boolean;
   realizedProfit?: number;
+  euroValue?: number;
 }
 
-function getQuantityAtEndOfYear(
-  transactions: {
-    date: bigint;
-    transactionType: TransactionType;
-    quantity: number;
-    hasOngoingCosts?: boolean;
-  }[],
-  year: number,
-  exclusive: boolean = false,
-  onlyOngoing: boolean = false
-): number {
-  const sorted = [...transactions].sort((a, b) => Number(a.date - b.date));
-  let qty = 0;
-  for (const tx of sorted) {
-    const txYear = new Date(Number(tx.date / 1_000_000n)).getFullYear();
-    if (exclusive ? txYear < year : txYear <= year) {
-      if (onlyOngoing && !tx.hasOngoingCosts) continue;
-      if (
-        tx.transactionType === TransactionType.buy ||
-        tx.transactionType === TransactionType.stakingReward
-      ) {
-        qty += tx.quantity;
-      } else if (tx.transactionType === TransactionType.sell) {
-        qty -= tx.quantity;
-      }
-    }
-  }
-  return Math.max(0, qty);
-}
 
 function computeRealizedForYear(
   transactions: {
@@ -104,6 +80,7 @@ function computeRealizedForYear(
     quantity: number;
     pricePerUnit: number;
     fees?: number;
+    euroValue?: number;
   }[],
   year: number
 ): { totalRealized: number; txProfits: Map<number, number> } {
@@ -149,24 +126,51 @@ function computeRealizedForYear(
       }
     } else if (tx.transactionType === TransactionType.stakingReward) {
       lots.push({ quantity: tx.quantity, costPerUnit: 0 });
+      // Euro value at receipt counts as realized profit
+      if (txYear === year && tx.euroValue !== undefined) {
+        totalRealized += tx.euroValue;
+        txProfits.set(tx.origIdx, tx.euroValue);
+      }
+    } else if (tx.transactionType === TransactionType.dividend) {
+      // Dividend counts as realized profit
+      if (txYear === year && tx.euroValue !== undefined) {
+        totalRealized += tx.euroValue;
+        txProfits.set(tx.origIdx, tx.euroValue);
+      }
     }
   }
 
   return { totalRealized, txProfits };
 }
 
+function computeLoanInterestForYear(loans: LoanView[], year: number): number {
+  let total = 0;
+  for (const loan of loans) {
+    for (const tx of loan.transactions) {
+      if (tx.transactionType !== LoanTransactionType.interestReceived) continue;
+      const txYear = new Date(Number(tx.date / 1_000_000n)).getFullYear();
+      if (txYear === year) {
+        total += tx.amount;
+      }
+    }
+  }
+  return total;
+}
+
 function computeYearStats(
   assets: AssetView[],
   year: number,
-  terMap: Record<string, number>
+  terMap: Record<string, number>,
+  loans: LoanView[] = []
 ): YearStats {
   let totalInvested = 0;
   let totalSales = 0;
   let totalFees = 0;
   let realizedPnL = 0;
   let unrealizedPnL = 0;
-  let terCosts = 0;
   let txTerCosts = 0;
+  let totalDividend = 0;
+  let totalStaking = 0;
   let allTimeInvested = 0;
 
   for (const asset of assets) {
@@ -175,12 +179,16 @@ function computeYearStats(
       return txYear === year;
     });
 
-    // Invested, sales, fees this year
+    // Invested, sales, fees, dividend, staking this year
     for (const tx of txInYear) {
       if (tx.transactionType === TransactionType.buy) {
         totalInvested += tx.quantity * tx.pricePerUnit + (tx.fees ?? 0);
       } else if (tx.transactionType === TransactionType.sell) {
         totalSales += tx.quantity * tx.pricePerUnit - (tx.fees ?? 0);
+      } else if (tx.transactionType === TransactionType.dividend) {
+        totalDividend += tx.euroValue ?? 0;
+      } else if (tx.transactionType === TransactionType.stakingReward) {
+        totalStaking += tx.euroValue ?? 0;
       }
       totalFees += tx.fees ?? 0;
     }
@@ -227,31 +235,24 @@ function computeYearStats(
       }
     }
 
-    // TER costs for this year: only count units from transactions with hasOngoingCosts === true
-    const ter = terMap[asset.ticker];
-    if (ter !== undefined && ter > 0) {
-      const startQty = getQuantityAtEndOfYear(asset.transactions, year, true, true);
-      const endQty = getQuantityAtEndOfYear(asset.transactions, year, false, true);
-      const avgQty = (startQty + endQty) / 2;
-      terCosts += avgQty * asset.currentPrice * (ter / 100);
-    }
-
-    // Per-transactie TER kosten voor het jaar
+    // Lopende kosten (TER) op assetniveau — gebaseerd op totale actuele waarde
     if (asset.assetType !== AssetType.crypto) {
       const txTer = terMap[asset.ticker];
       if (txTer !== undefined && txTer > 0) {
-        for (const tx of asset.transactions) {
-          if (!tx.hasOngoingCosts) continue;
-          const txYear = new Date(Number(tx.date / 1_000_000n)).getFullYear();
-          if (txYear === year) {
-            txTerCosts += tx.quantity * tx.pricePerUnit * (txTer / 100);
-          }
-        }
+        // Bepaal het aantal stuks in bezit voor het betreffende jaar
+        // We gebruiken calculateFifo over alle transacties t/m dat jaar
+        const fifo = calculateFifo(asset.transactions, asset.currentPrice);
+        // TER wordt berekend op de huidige waarde (actuele positie)
+        txTerCosts += fifo.currentQuantity * asset.currentPrice * (txTer / 100);
       }
     }
   }
 
-  const netReturn = realizedPnL + unrealizedPnL - terCosts - txTerCosts;
+  // Loan interest for this year counts as realized gain
+  const totalLoanInterest = computeLoanInterestForYear(loans, year);
+  realizedPnL += totalLoanInterest;
+
+  const netReturn = realizedPnL + unrealizedPnL - txTerCosts;
   const netReturnPct = allTimeInvested > 0 ? (netReturn / allTimeInvested) * 100 : 0;
 
   return {
@@ -260,8 +261,10 @@ function computeYearStats(
     totalFees,
     realizedPnL,
     unrealizedPnL,
-    terCosts,
     txTerCosts,
+    totalDividend,
+    totalStaking,
+    totalLoanInterest,
     netReturn,
     netReturnPct,
   };
@@ -290,8 +293,8 @@ function getYearTransactions(assets: AssetView[], year: number): YearTransaction
         quantity: tx.quantity,
         pricePerUnit: tx.pricePerUnit,
         fees: tx.fees,
-        hasOngoingCosts: tx.hasOngoingCosts,
         realizedProfit: txProfits.get(origIdx),
+        euroValue: tx.euroValue,
       });
     }
   }
@@ -328,37 +331,43 @@ function txTypeLabel(type: TransactionType): string {
       return "Verkoop";
     case TransactionType.stakingReward:
       return "Staking reward";
+    case TransactionType.dividend:
+      return "Dividend";
     default:
       return String(type);
   }
 }
 
-function calcTxTerCost(tx: YearTransaction, terMap: Record<string, number>): number {
-  if (tx.assetType === AssetType.crypto) return 0;
-  if (!tx.hasOngoingCosts) return 0;
-  const ter = terMap[tx.assetTicker];
-  if (!ter || ter <= 0) return 0;
-  return tx.quantity * tx.pricePerUnit * (ter / 100);
-}
 
-function exportXlsx(
+async function exportXlsx(
   year: number,
   stats: YearStats,
   transactions: YearTransaction[],
-  terMap: Record<string, number>
+  commodityTickers?: Set<string>
 ) {
-  const hasTer = Object.values(terMap).some((v) => v > 0);
+  // Dynamically load xlsx from CDN
+  let XLSX: any;
+  try {
+    // Try dynamic import first (if bundled)
+    XLSX = await import("https://cdn.sheetjs.com/xlsx-0.20.3/package/xlsx.mjs" as unknown as string);
+  } catch {
+    toast.error("Export niet beschikbaar: xlsx kon niet worden geladen");
+    return;
+  }
 
   // Sheet 1: Samenvatting
   const summaryData = [
     ["Label", "Waarde (€)"],
-    ["Geïnvesteerd", stats.totalInvested],
+    ["Inleg", stats.totalInvested],
     ["Verkopen", stats.totalSales],
     ["Transactiekosten", stats.totalFees],
     ["Gerealiseerd", stats.realizedPnL],
     ["Ongerealiseerd", stats.unrealizedPnL],
-    ...(hasTer ? [["Lopende kosten ETF", -stats.terCosts]] : []),
-    ...(stats.txTerCosts > 0 ? [["Lop. kosten (transacties)", -stats.txTerCosts]] : []),
+    ...(stats.totalDividend > 0 ? [["Ontvangen dividend", stats.totalDividend]] : []),
+    ...(stats.totalStaking > 0 ? [["Ontvangen staking", stats.totalStaking]] : []),
+    ...(stats.txTerCosts > 0
+      ? [["Lopende kosten (ETF) – totaal huidige waarde", -stats.txTerCosts]]
+      : []),
     ["Netto rendement", stats.netReturn],
     ["Rendement %", stats.netReturnPct / 100],
   ];
@@ -383,33 +392,30 @@ function exportXlsx(
     "Aantal",
     "Prijs/stuk (€)",
     "Transactiekosten (€)",
-    "Lop. kosten (€)",
     "Winst/Verlies (€)",
   ];
   const txRows = transactions.map((tx) => {
-    const txTer = calcTxTerCost(tx, terMap);
+    const isCommodityRow = !!(commodityTickers?.has(tx.assetTicker));
     return [
       formatDate(tx.date),
       tx.assetName,
       tx.assetTicker,
       txTypeLabel(tx.transactionType),
-      tx.assetType === AssetType.crypto ? "Crypto" : "Aandeel",
-      tx.quantity,
-      tx.transactionType === TransactionType.stakingReward ? "" : tx.pricePerUnit,
+      tx.assetType === AssetType.crypto ? "Crypto" : isCommodityRow ? "Grondstof" : "Aandeel",
+      tx.transactionType === TransactionType.dividend ? "" : tx.quantity,
+      tx.transactionType === TransactionType.stakingReward ||
+      tx.transactionType === TransactionType.dividend ? "" : tx.pricePerUnit,
       tx.fees ?? "",
-      txTer > 0 ? -txTer : "",
       tx.realizedProfit ?? "",
     ];
   });
 
   // Totaal row
   const totalFees = transactions.reduce((s, tx) => s + (tx.fees ?? 0), 0);
-  const totalTxTer = transactions.reduce((s, tx) => s + calcTxTerCost(tx, terMap), 0);
   const totalPnL = transactions.reduce((s, tx) => s + (tx.realizedProfit ?? 0), 0);
   const totaalRow = [
     "Totaal", "", "", "", "", "", "",
     totalFees,
-    totalTxTer > 0 ? -totalTxTer : "",
     totalPnL,
   ];
 
@@ -424,7 +430,6 @@ function exportXlsx(
     { wch: 16 },
     { wch: 20 },
     { wch: 18 },
-    { wch: 18 },
   ];
 
   const wb = XLSX.utils.book_new();
@@ -433,14 +438,27 @@ function exportXlsx(
   XLSX.writeFile(wb, `VWB_Jaaroverzicht_${year}.xlsx`);
 }
 
-function exportPdf(
+async function exportPdf(
   year: number,
   stats: YearStats,
   transactions: YearTransaction[],
-  terMap: Record<string, number>
+  commodityTickers?: Set<string>
 ) {
-  const hasTer = Object.values(terMap).some((v) => v > 0);
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  // Dynamically load jsPDF from CDN
+  let jsPDFModule: any;
+  let autoTableModule: any;
+  try {
+    jsPDFModule = await import("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" as unknown as string);
+    autoTableModule = await import("https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" as unknown as string);
+  } catch {
+    toast.error("Export niet beschikbaar: PDF-bibliotheek kon niet worden geladen");
+    return;
+  }
+
+  const JsPDFCtor = jsPDFModule?.jsPDF ?? jsPDFModule?.default?.jsPDF ?? (jsPDFModule as any);
+  const autoTable = autoTableModule?.default ?? autoTableModule;
+
+  const doc: any = new JsPDFCtor({ orientation: "landscape", unit: "mm", format: "a4" });
 
   // Title
   doc.setFontSize(16);
@@ -457,17 +475,20 @@ function exportPdf(
   doc.setFont("helvetica", "bold");
   doc.text("Samenvatting", 14, 32);
 
-  const summaryRows: [string, string][] = [
-    ["Geïnvesteerd", formatEuro(stats.totalInvested)],
+  const summaryRows = [
+    ["Inleg", formatEuro(stats.totalInvested)],
     ["Verkopen", formatEuro(stats.totalSales)],
     ["Transactiekosten", formatEuro(stats.totalFees)],
     ["Gerealiseerd", formatEuro(stats.realizedPnL)],
     ["Ongerealiseerd", formatEuro(stats.unrealizedPnL)],
-    ...(hasTer
-      ? [["Lopende kosten ETF", `-${formatEuro(stats.terCosts)}`] as [string, string]]
+    ...(stats.totalDividend > 0
+      ? [["Ontvangen dividend", formatEuro(stats.totalDividend)]]
+      : []),
+    ...(stats.totalStaking > 0
+      ? [["Ontvangen staking", formatEuro(stats.totalStaking)]]
       : []),
     ...(stats.txTerCosts > 0
-      ? [["Lop. kosten (transacties)", `-${formatEuro(stats.txTerCosts)}`] as [string, string]]
+      ? [["Lopende kosten (ETF) – totaal huidige waarde", `-${formatEuro(stats.txTerCosts)}`]]
       : []),
     ["Netto rendement", formatEuro(stats.netReturn)],
     ["Rendement %", formatPercent(stats.netReturnPct)],
@@ -486,8 +507,7 @@ function exportPdf(
   });
 
   // Transactions table
-  const afterSummary = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable
-    ?.finalY ?? 80;
+  const afterSummary = doc.lastAutoTable?.finalY ?? 80;
 
   doc.setFontSize(11);
   doc.setFont("helvetica", "bold");
@@ -502,33 +522,34 @@ function exportPdf(
     "Aantal",
     "Prijs/stuk",
     "Tx kosten",
-    "Lop. kosten",
     "Winst/Verlies",
   ];
   const txRows = transactions.map((tx) => {
-    const txTer = calcTxTerCost(tx, terMap);
+    const isCommodityRow = !!(commodityTickers?.has(tx.assetTicker));
     return [
       formatDate(tx.date),
       tx.assetName,
       tx.assetTicker,
       txTypeLabel(tx.transactionType),
-      tx.assetType === AssetType.crypto ? "Crypto" : "Aandeel",
-      formatQuantity(tx.quantity, tx.assetType === AssetType.crypto),
-      tx.transactionType === TransactionType.stakingReward ? "—" : formatEuro(tx.pricePerUnit, 4),
+      tx.assetType === AssetType.crypto ? "Crypto" : isCommodityRow ? "Grondstof" : "Aandeel",
+      tx.transactionType === TransactionType.dividend
+        ? "—"
+        : formatQuantity(tx.quantity, tx.assetType === AssetType.crypto),
+      tx.transactionType === TransactionType.stakingReward ||
+      tx.transactionType === TransactionType.dividend
+        ? "—"
+        : formatEuro(tx.pricePerUnit, 4),
       tx.fees ? formatEuro(tx.fees) : "—",
-      txTer > 0 ? `-${formatEuro(txTer)}` : "—",
       tx.realizedProfit !== undefined ? formatEuro(tx.realizedProfit) : "—",
     ];
   });
 
   // Totaal row
   const totalFees = transactions.reduce((s, tx) => s + (tx.fees ?? 0), 0);
-  const totalTxTer = transactions.reduce((s, tx) => s + calcTxTerCost(tx, terMap), 0);
   const totalPnL = transactions.reduce((s, tx) => s + (tx.realizedProfit ?? 0), 0);
   const totaalRow = [
     "Totaal", "", "", "", "", "", "",
     formatEuro(totalFees),
-    totalTxTer > 0 ? `-${formatEuro(totalTxTer)}` : "—",
     formatEuro(totalPnL),
   ];
 
@@ -544,7 +565,6 @@ function exportPdf(
       6: { halign: "right" },
       7: { halign: "right" },
       8: { halign: "right" },
-      9: { halign: "right" },
     },
     margin: { left: 14, right: 14 },
   });
@@ -552,14 +572,14 @@ function exportPdf(
   doc.save(`VWB_Jaaroverzicht_${year}.pdf`);
 }
 
-export function YearOverview({ assets, terMap }: YearOverviewProps) {
+export function YearOverview({ assets, terMap, commodityTickers, loans = [] }: YearOverviewProps) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: currentYear - 2019 }, (_, i) => currentYear - i);
   const [selectedYear, setSelectedYear] = useState(currentYear);
 
   const stats = useMemo(
-    () => computeYearStats(assets, selectedYear, terMap),
-    [assets, selectedYear, terMap]
+    () => computeYearStats(assets, selectedYear, terMap, loans),
+    [assets, selectedYear, terMap, loans]
   );
 
   const yearTxs = useMemo(
@@ -567,8 +587,10 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
     [assets, selectedYear]
   );
 
-  const hasTer = Object.values(terMap).some((v) => v > 0);
   const hasTxTerCosts = stats.txTerCosts > 0;
+  const hasDividend = stats.totalDividend > 0;
+  const hasStaking = stats.totalStaking > 0;
+  const hasLoanInterest = stats.totalLoanInterest > 0;
   const returnIsPositive = stats.netReturn > 0.005;
   const returnIsNegative = stats.netReturn < -0.005;
 
@@ -588,7 +610,7 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
             size="sm"
             variant="outline"
             className="h-8 gap-1.5 text-xs"
-            onClick={() => exportXlsx(selectedYear, stats, yearTxs, terMap)}
+            onClick={() => exportXlsx(selectedYear, stats, yearTxs, commodityTickers)}
             title="Exporteren als Excel"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -598,7 +620,7 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
             size="sm"
             variant="outline"
             className="h-8 gap-1.5 text-xs"
-            onClick={() => exportPdf(selectedYear, stats, yearTxs, terMap)}
+            onClick={() => exportPdf(selectedYear, stats, yearTxs, commodityTickers)}
             title="Exporteren als PDF"
           >
             <FileText className="w-3.5 h-3.5" />
@@ -626,7 +648,7 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
       {/* Stats grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         <StatCard
-          label="Geïnvesteerd"
+          label="Inleg"
           icon={<Wallet className="w-4 h-4" />}
           value={<MoneyValue amount={stats.totalInvested} className="text-lg font-semibold" />}
         />
@@ -650,20 +672,30 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
           icon={<TrendingUp className="w-4 h-4" />}
           value={<ReturnValue amount={stats.unrealizedPnL} className="text-lg font-semibold" />}
         />
-        {hasTer && (
+        {hasDividend && (
           <StatCard
-            label="Lopende kosten ETF"
-            icon={<Percent className="w-4 h-4" />}
-            value={
-              <span className="num text-lg font-semibold text-loss">
-                {stats.terCosts > 0 ? `-${formatEuro(stats.terCosts)}` : formatEuro(0)}
-              </span>
-            }
+            label="Ontvangen dividend"
+            icon={<Landmark className="w-4 h-4" />}
+            value={<ReturnValue amount={stats.totalDividend} className="text-lg font-semibold" />}
+          />
+        )}
+        {hasStaking && (
+          <StatCard
+            label="Ontvangen staking"
+            icon={<Coins className="w-4 h-4" />}
+            value={<ReturnValue amount={stats.totalStaking} className="text-lg font-semibold" />}
+          />
+        )}
+        {hasLoanInterest && (
+          <StatCard
+            label="Rente leningen"
+            icon={<Landmark className="w-4 h-4" />}
+            value={<ReturnValue amount={stats.totalLoanInterest} className="text-lg font-semibold" />}
           />
         )}
         {hasTxTerCosts && (
           <StatCard
-            label="Lop. kosten (transacties)"
+            label="Lopende kosten (ETF) – totaal huidige waarde"
             icon={<Percent className="w-4 h-4" />}
             value={
               <span className="num text-lg font-semibold text-loss">
@@ -746,16 +778,14 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
                     Kosten
                   </TableHead>
                   <TableHead className="text-xs uppercase tracking-wider text-right">
-                    Lop. kosten
-                  </TableHead>
-                  <TableHead className="text-xs uppercase tracking-wider text-right">
                     Winst/Verlies
                   </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {yearTxs.map((tx, idx) => {
+                    {yearTxs.map((tx, idx) => {
                   const isCrypto = tx.assetType === AssetType.crypto;
+                  const isCommodityTx = !!(commodityTickers?.has(tx.assetTicker));
                   return (
                     <TableRow
                       key={`${tx.date}-${tx.assetTicker}-${idx}`}
@@ -781,20 +811,27 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
                             "text-[10px] px-1.5 py-0",
                             isCrypto
                               ? "border-chart-2/50 text-chart-2"
-                              : "border-primary/50 text-primary"
+                              : isCommodityTx
+                                ? "border-amber-500/50 text-amber-600 dark:text-amber-400"
+                                : "border-primary/50 text-primary"
                           )}
                         >
-                          {isCrypto ? "Crypto" : "Aandeel"}
+                          {isCrypto ? "Crypto" : isCommodityTx ? "Grondstof" : "Aandeel"}
                         </Badge>
                       </TableCell>
                       <TableCell className="py-2.5">
                         <TransactionTypeBadge type={tx.transactionType} />
                       </TableCell>
                       <TableCell className="num text-right py-2.5">
-                        {formatQuantity(tx.quantity, isCrypto)}
+                        {tx.transactionType === TransactionType.dividend ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          formatQuantity(tx.quantity, isCrypto)
+                        )}
                       </TableCell>
                       <TableCell className="num text-right py-2.5">
-                        {tx.transactionType === TransactionType.stakingReward ? (
+                        {tx.transactionType === TransactionType.stakingReward ||
+                         tx.transactionType === TransactionType.dividend ? (
                           <span className="text-muted-foreground">—</span>
                         ) : (
                           formatEuro(tx.pricePerUnit, 4)
@@ -802,15 +839,6 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
                       </TableCell>
                       <TableCell className="num text-right py-2.5 text-muted-foreground">
                         {tx.fees ? formatEuro(tx.fees) : "—"}
-                      </TableCell>
-                      <TableCell className="num text-right py-2.5">
-                        {(() => {
-                          const txTer = calcTxTerCost(tx, terMap);
-                          if (txTer > 0) {
-                            return <ReturnValue amount={-txTer} />;
-                          }
-                          return <span className="text-muted-foreground">—</span>;
-                        })()}
                       </TableCell>
                       <TableCell className="text-right py-2.5">
                         {tx.realizedProfit !== undefined ? (
@@ -825,7 +853,6 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
                 {/* Totaal row */}
                 {(() => {
                   const totalFees = yearTxs.reduce((s, tx) => s + (tx.fees ?? 0), 0);
-                  const totalTxTer = yearTxs.reduce((s, tx) => s + calcTxTerCost(tx, terMap), 0);
                   const totalPnL = yearTxs.reduce((s, tx) => s + (tx.realizedProfit ?? 0), 0);
                   return (
                     <TableRow className="bg-muted/50 font-semibold border-t border-border">
@@ -837,9 +864,6 @@ export function YearOverview({ assets, terMap }: YearOverviewProps) {
                       <TableCell />
                       <TableCell className="num text-right py-2.5">
                         {totalFees > 0 ? formatEuro(totalFees) : "—"}
-                      </TableCell>
-                      <TableCell className="num text-right py-2.5">
-                        {totalTxTer > 0 ? <ReturnValue amount={-totalTxTer} /> : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell className="text-right py-2.5">
                         <ReturnValue amount={totalPnL} />

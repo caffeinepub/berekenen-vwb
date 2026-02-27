@@ -1,20 +1,31 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { Dashboard } from "./components/Dashboard";
+import { PortfolioDashboard } from "./components/PortfolioDashboard";
 import { AssetsList } from "./components/AssetsList";
 import { YearOverview } from "./components/YearOverview";
+import { LoansPage } from "./components/LoansPage";
+import { SettingsPage } from "./components/SettingsPage";
 import { AddAssetDialog } from "./components/AddAssetDialog";
-import { AddTransactionDialog } from "./components/AddTransactionDialog";
-import { useAllAssets } from "./hooks/useQueries";
+import { AddCommodityAssetDialog } from "./components/AddCommodityAssetDialog";
+import { useAllAssets, useAllLoans } from "./hooks/useQueries";
 import { useTer } from "./hooks/useTer";
+import { useCommodities } from "./hooks/useCommodities";
+import { useSettings } from "./hooks/useSettings";
+import { usePriceRefresh } from "./hooks/usePriceRefresh";
 import { AssetType } from "./backend.d";
 import { Button } from "@/components/ui/button";
-import { Plus, TrendingUp, RefreshCw, Coins, CalendarDays } from "lucide-react";
+import { Plus, TrendingUp, RefreshCw, Coins, CalendarDays, Mountain, Handshake, Settings, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Section = "stocks" | "crypto" | "yearoverview";
+type Section = "dashboard" | "stocks" | "crypto" | "commodities" | "yearoverview" | "loans" | "settings";
 
 const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    icon: <LayoutDashboard className="w-4 h-4" />,
+  },
   {
     id: "stocks",
     label: "Aandelen",
@@ -26,26 +37,102 @@ const SECTIONS: { id: Section; label: string; icon: React.ReactNode }[] = [
     icon: <Coins className="w-4 h-4" />,
   },
   {
+    id: "commodities",
+    label: "Grondstoffen",
+    icon: <Mountain className="w-4 h-4" />,
+  },
+  {
+    id: "loans",
+    label: "Leningen",
+    icon: <Handshake className="w-4 h-4" />,
+  },
+  {
     id: "yearoverview",
     label: "Jaaroverzicht",
     icon: <CalendarDays className="w-4 h-4" />,
+  },
+  {
+    id: "settings",
+    label: "Instellingen",
+    icon: <Settings className="w-4 h-4" />,
   },
 ];
 
 export default function App() {
   const { data: assets = [], isLoading, refetch, isFetching } = useAllAssets();
-  const { terMap, updateTer } = useTer();
-  const [activeSection, setActiveSection] = useState<Section>("stocks");
+  const { data: loans = [] } = useAllLoans();
+  const { terMap, updateTer, ongoingCostsMap, updateOngoingCosts } = useTer();
+  const { commodityTickers } = useCommodities();
+  const { twelveDataApiKey } = useSettings();
+  const [activeSection, setActiveSection] = useState<Section>("dashboard");
+  const { refreshPrices } = usePriceRefresh();
 
-  const filteredAssets = assets.filter((a) =>
-    activeSection === "stocks"
-      ? a.assetType === AssetType.stock
-      : activeSection === "crypto"
-        ? a.assetType === AssetType.crypto
-        : true // yearoverview shows all
+  // Filter for stocks: assetType === stock AND not a commodity
+  const stockAssets = assets.filter(
+    (a) => a.assetType === AssetType.stock && !commodityTickers.has(a.ticker)
   );
 
+  // Filter for crypto
+  const cryptoAssets = assets.filter((a) => a.assetType === AssetType.crypto);
+
+  // Filter for commodities: assetType === stock AND is a commodity
+  const commodityAssets = assets.filter(
+    (a) => a.assetType === AssetType.stock && commodityTickers.has(a.ticker)
+  );
+
+  // Refresh prices when switching to the stocks or crypto tab
+  useEffect(() => {
+    if (activeSection === "stocks" && stockAssets.length > 0) {
+      refreshPrices(stockAssets, "stocks");
+    } else if (activeSection === "crypto" && cryptoAssets.length > 0) {
+      refreshPrices(cryptoAssets, "crypto");
+    }
+  }, [activeSection]); // only re-run when tab changes
+
+  const filteredAssets =
+    activeSection === "stocks"
+      ? stockAssets
+      : activeSection === "crypto"
+        ? cryptoAssets
+        : activeSection === "commodities"
+          ? commodityAssets
+          : assets; // yearoverview shows all
+
   const isYearOverview = activeSection === "yearoverview";
+  const isLoans = activeSection === "loans";
+  const isCommodities = activeSection === "commodities";
+  const isSettings = activeSection === "settings";
+
+  const sectionIcon =
+    activeSection === "stocks" ? (
+      <TrendingUp className="w-5 h-5" />
+    ) : activeSection === "crypto" ? (
+      <Coins className="w-5 h-5" />
+    ) : activeSection === "commodities" ? (
+      <Mountain className="w-5 h-5" />
+    ) : (
+      <Handshake className="w-5 h-5" />
+    );
+
+  const sectionTitle =
+    activeSection === "stocks"
+      ? "Aandelen"
+      : activeSection === "crypto"
+        ? "Crypto"
+        : activeSection === "commodities"
+          ? "Grondstoffen"
+          : "Leningen";
+
+  const sectionIconColor =
+    activeSection === "dashboard"
+      ? "text-primary"
+      : activeSection === "stocks"
+        ? "text-primary"
+        : activeSection === "crypto"
+          ? "text-chart-2"
+          : activeSection === "commodities"
+            ? "text-amber-500"
+            : "text-emerald-500";
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -77,20 +164,6 @@ export default function App() {
             >
               <RefreshCw className={cn("w-4 h-4", isFetching && "animate-spin")} />
             </Button>
-
-            <AddTransactionDialog assets={assets}>
-              <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-                <Plus className="w-3.5 h-3.5" />
-                Transactie
-              </Button>
-            </AddTransactionDialog>
-
-            <AddAssetDialog>
-              <Button size="sm" className="h-8 gap-1.5 text-xs">
-                <Plus className="w-3.5 h-3.5" />
-                Asset
-              </Button>
-            </AddAssetDialog>
           </nav>
         </div>
       </header>
@@ -114,7 +187,16 @@ export default function App() {
               >
                 <span
                   className={cn(
-                    activeSection === s.id ? "text-primary" : "text-muted-foreground"
+                    activeSection === s.id
+                      ? s.id === "commodities"
+                        ? "text-amber-500"
+                        : s.id === "loans"
+                          ? "text-emerald-500"
+                          : s.id === "settings"
+                            ? "text-muted-foreground"
+                            : "text-primary"
+                      : "text-muted-foreground",
+                    s.id === "dashboard" && activeSection === s.id && "text-primary"
                   )}
                 >
                   {s.icon}
@@ -129,7 +211,35 @@ export default function App() {
         <main className="flex-1 overflow-y-auto pb-20 md:pb-6">
           <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex flex-col gap-8">
 
-            {isYearOverview ? (
+            {activeSection === "dashboard" ? (
+              /* Dashboard landingspagina */
+              <section aria-labelledby="portfolio-dashboard-heading">
+                <h1 className="text-xl font-bold tracking-tight flex items-center gap-2 mb-6">
+                  <span className="text-primary">
+                    <LayoutDashboard className="w-5 h-5" />
+                  </span>
+                  Dashboard
+                </h1>
+                <PortfolioDashboard
+                  assets={assets}
+                  loans={loans}
+                  commodityTickers={commodityTickers}
+                  terMap={terMap}
+                  onNavigate={(section) => setActiveSection(section)}
+                />
+              </section>
+            ) : isSettings ? (
+              /* Instellingen tab */
+              <section aria-labelledby="settings-heading">
+                <h1 className="text-xl font-bold tracking-tight flex items-center gap-2 mb-6">
+                  <span className="text-muted-foreground">
+                    <Settings className="w-5 h-5" />
+                  </span>
+                  Instellingen
+                </h1>
+                <SettingsPage />
+              </section>
+            ) : isYearOverview ? (
               /* Jaaroverzicht tab — full width, all assets */
               <section aria-labelledby="year-overview-heading">
                 <h1 className="text-xl font-bold tracking-tight flex items-center gap-2 mb-6">
@@ -138,7 +248,18 @@ export default function App() {
                   </span>
                   Jaaroverzicht
                 </h1>
-                <YearOverview assets={assets} terMap={terMap} />
+                <YearOverview assets={assets} terMap={terMap} commodityTickers={commodityTickers} loans={loans} />
+              </section>
+            ) : isLoans ? (
+              /* Leningen tab */
+              <section aria-labelledby="loans-heading">
+                <h1 className="text-xl font-bold tracking-tight flex items-center gap-2 mb-6">
+                  <span className="text-emerald-500">
+                    <Handshake className="w-5 h-5" />
+                  </span>
+                  Leningen
+                </h1>
+                <LoansPage />
               </section>
             ) : (
               <>
@@ -146,18 +267,8 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h1 className="text-xl font-bold tracking-tight flex items-center gap-2">
-                      <span
-                        className={cn(
-                          activeSection === "stocks" ? "text-primary" : "text-chart-2"
-                        )}
-                      >
-                        {activeSection === "stocks" ? (
-                          <TrendingUp className="w-5 h-5" />
-                        ) : (
-                          <Coins className="w-5 h-5" />
-                        )}
-                      </span>
-                      {activeSection === "stocks" ? "Aandelen" : "Crypto"}
+                      <span className={sectionIconColor}>{sectionIcon}</span>
+                      {sectionTitle}
                     </h1>
                     {!isLoading && (
                       <p className="text-xs text-muted-foreground mt-0.5">
@@ -167,12 +278,42 @@ export default function App() {
                       </p>
                     )}
                   </div>
-                  <AddAssetDialog>
-                    <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
-                      <Plus className="w-3.5 h-3.5" />
-                      Asset toevoegen
-                    </Button>
-                  </AddAssetDialog>
+
+                  {/* Section-specific add button */}
+                  {activeSection === "stocks" && (
+                    <AddAssetDialog
+                      updateOngoingCosts={updateOngoingCosts}
+                      updateTer={updateTer}
+                      allowedAssetTypes={["stock", "etf"]}
+                      apiKey={twelveDataApiKey}
+                    >
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                        <Plus className="w-3.5 h-3.5" />
+                        Asset toevoegen
+                      </Button>
+                    </AddAssetDialog>
+                  )}
+                  {activeSection === "crypto" && (
+                    <AddAssetDialog
+                      updateOngoingCosts={updateOngoingCosts}
+                      updateTer={updateTer}
+                      forcedAssetType="crypto"
+                      apiKey={twelveDataApiKey}
+                    >
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                        <Plus className="w-3.5 h-3.5" />
+                        Asset toevoegen
+                      </Button>
+                    </AddAssetDialog>
+                  )}
+                  {isCommodities && (
+                    <AddCommodityAssetDialog assets={assets}>
+                      <Button size="sm" variant="outline" className="h-8 gap-1.5 text-xs">
+                        <Plus className="w-3.5 h-3.5" />
+                        Grondstof toevoegen
+                      </Button>
+                    </AddCommodityAssetDialog>
+                  )}
                 </div>
 
                 {/* Dashboard — section-specific */}
@@ -193,6 +334,9 @@ export default function App() {
                     isLoading={isLoading}
                     terMap={terMap}
                     updateTer={updateTer}
+                    ongoingCostsMap={ongoingCostsMap}
+                    updateOngoingCosts={updateOngoingCosts}
+                    commodityTickers={commodityTickers}
                   />
                 </section>
               </>
@@ -210,14 +354,21 @@ export default function App() {
               type="button"
               onClick={() => setActiveSection(s.id)}
               className={cn(
-                "flex-1 flex flex-col items-center gap-1 py-2.5 px-3 text-xs font-medium transition-colors",
+                "flex-1 flex flex-col items-center gap-1 py-2.5 px-1 text-xs font-medium transition-colors",
                 activeSection === s.id
-                  ? "text-primary"
+                  ? s.id === "commodities"
+                    ? "text-amber-500"
+                    : s.id === "loans"
+                      ? "text-emerald-500"
+                      : s.id === "settings"
+                        ? "text-foreground"
+                        : "text-primary"
                   : "text-muted-foreground hover:text-foreground"
               )}
+              title={s.label}
             >
               <span>{s.icon}</span>
-              <span>{s.label}</span>
+              <span className="text-[10px]">{s.label}</span>
             </button>
           ))}
         </div>

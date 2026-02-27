@@ -27,6 +27,7 @@ interface TransactionHistoryProps {
   terMap?: Record<string, number>;
   ticker?: string;
   defaultOpen?: boolean;
+  isCommodity?: boolean;
 }
 
 interface TransactionWithProfit extends TransactionView {
@@ -70,6 +71,15 @@ function computeTransactionProfits(
       profitMap.set(origIdx, saleRevenue - costOfSold);
     } else if (tx.transactionType === TransactionType.stakingReward) {
       lots.push({ quantity: tx.quantity, costPerUnit: 0 });
+      // Euro value at receipt counts as realized profit
+      if (tx.euroValue !== undefined) {
+        profitMap.set(origIdx, tx.euroValue);
+      }
+    } else if (tx.transactionType === TransactionType.dividend) {
+      // Dividend counts as realized profit
+      if (tx.euroValue !== undefined) {
+        profitMap.set(origIdx, tx.euroValue);
+      }
     }
   }
 
@@ -135,9 +145,8 @@ export function TransactionHistory({
   asset,
   currentPrice,
   assetType,
-  terMap,
-  ticker,
   defaultOpen = false,
+  isCommodity = false,
 }: TransactionHistoryProps) {
   const [open, setOpen] = useState(defaultOpen);
   const isCrypto = assetType === AssetType.crypto;
@@ -182,14 +191,11 @@ export function TransactionHistory({
                     Prijs/stuk
                   </th>
                   <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Kosten
-                  </th>
-                  <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Lop. kosten
-                  </th>
-                  <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                    Winst/Verlies
-                  </th>
+                     Kosten
+                   </th>
+                   <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                     Winst/Verlies
+                   </th>
                   <th className="w-16 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider" />
                 </tr>
               </thead>
@@ -211,27 +217,17 @@ export function TransactionHistory({
                     <td className="py-2.5 pr-4 text-right num">
                       {formatQuantity(tx.quantity, isCrypto)}
                     </td>
-                    <td className="py-2.5 pr-4 text-right num">
-                      {tx.transactionType === TransactionType.stakingReward
-                        ? <span className="text-muted-foreground">—</span>
-                        : formatEuro(tx.pricePerUnit, 6)
-                      }
-                    </td>
-                    <td className="py-2.5 pr-4 text-right num text-muted-foreground">
-                      {tx.fees ? formatEuro(tx.fees) : "—"}
-                    </td>
-                    <td className="py-2.5 pr-4 text-right num">
-                      {(() => {
-                        const effectiveTicker = ticker ?? asset.ticker;
-                        const ter = terMap?.[effectiveTicker];
-                        if (tx.hasOngoingCosts && ter !== undefined && ter > 0) {
-                          const cost = tx.quantity * tx.pricePerUnit * (ter / 100);
-                          return <ReturnValue amount={-cost} />;
-                        }
-                        return <span className="text-muted-foreground">—</span>;
-                      })()}
-                    </td>
-                    <td className="py-2.5 pr-4 text-right">
+                     <td className="py-2.5 pr-4 text-right num">
+                       {tx.transactionType === TransactionType.stakingReward ||
+                        tx.transactionType === TransactionType.dividend
+                         ? <span className="text-muted-foreground">—</span>
+                         : formatEuro(tx.pricePerUnit, 6)
+                       }
+                     </td>
+                     <td className="py-2.5 pr-4 text-right num text-muted-foreground">
+                       {tx.fees ? formatEuro(tx.fees) : "—"}
+                     </td>
+                     <td className="py-2.5 pr-4 text-right">
                       {tx.realizedProfit !== undefined ? (
                         <ReturnValue amount={tx.realizedProfit} />
                       ) : (
@@ -244,6 +240,7 @@ export function TransactionHistory({
                           asset={asset}
                           transactionIndex={tx.originalIndex}
                           transaction={transactions[tx.originalIndex]}
+                          isCommodity={isCommodity}
                         >
                           <button
                             type="button"

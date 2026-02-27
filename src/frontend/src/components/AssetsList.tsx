@@ -31,6 +31,10 @@ interface AssetsListProps {
   isLoading: boolean;
   terMap: Record<string, number>;
   updateTer: (ticker: string, pct: number | null) => void;
+  ongoingCostsMap: Record<string, boolean>;
+  updateOngoingCosts: (ticker: string, enabled: boolean) => void;
+  /** Set of tickers that are commodities — affects badge display and hides TER */
+  commodityTickers?: Set<string>;
 }
 
 interface TerEditState {
@@ -84,7 +88,7 @@ function DeleteAssetButton({ asset }: { asset: AssetView }) {
   );
 }
 
-export function AssetsList({ assets, isLoading, terMap, updateTer }: AssetsListProps) {
+export function AssetsList({ assets, isLoading, terMap, updateTer, ongoingCostsMap, updateOngoingCosts, commodityTickers }: AssetsListProps) {
   const [terEdit, setTerEdit] = useState<TerEditState | null>(null);
 
   const startTerEdit = (ticker: string) => {
@@ -148,9 +152,23 @@ export function AssetsList({ assets, isLoading, terMap, updateTer }: AssetsListP
         const currentValue = fifo.currentQuantity * asset.currentPrice;
         const isCrypto = asset.assetType === AssetType.crypto;
         const isStock = asset.assetType === AssetType.stock;
+        const isCommodityAsset = !!(commodityTickers?.has(asset.ticker));
         const isEditingTer = terEdit?.ticker === asset.ticker;
         const terValue = terMap[asset.ticker];
-        const hasTer = terValue !== undefined && terValue !== null;
+        const hasTer = !!(ongoingCostsMap[asset.ticker] && terValue !== undefined && terValue !== null && terValue > 0);
+
+        // Transactiekosten = som van alle fees
+        const totalTxFees = asset.transactions.reduce((s, tx) => s + (tx.fees ?? 0), 0);
+
+        // Lopende kosten (TER) — op basis van totale actuele waarde van het asset
+        // Alleen voor aandelen/ETF, niet voor crypto en niet voor grondstoffen
+        const totalTerCosts =
+          isStock && !isCommodityAsset && hasTer
+            ? fifo.currentQuantity * asset.currentPrice * (terValue / 100)
+            : 0;
+
+        // Totale kosten = transactiekosten + lopende kosten TER
+        const totalCosts = totalTxFees + totalTerCosts;
 
         return (
           <div
@@ -173,18 +191,25 @@ export function AssetsList({ assets, isLoading, terMap, updateTer }: AssetsListP
                           {asset.ticker}
                         </span>
                         <span className="font-medium truncate">{asset.name}</span>
-                        <AssetBadge assetType={asset.assetType} />
+                        <AssetBadge assetType={asset.assetType} isCommodity={isCommodityAsset} />
                       </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <AddTransactionDialog assets={[asset]} defaultTicker={asset.ticker}>
+                    <AddTransactionDialog assets={[asset]} defaultTicker={asset.ticker} commodityTickers={commodityTickers}>
                       <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5">
                         <PlusCircle className="w-3.5 h-3.5" />
                         Transactie
                       </Button>
                     </AddTransactionDialog>
-                    <EditAssetDialog asset={asset}>
+                    <EditAssetDialog
+                      asset={asset}
+                      ongoingCostsEnabled={!!ongoingCostsMap[asset.ticker]}
+                      terValue={terMap[asset.ticker]}
+                      updateOngoingCosts={updateOngoingCosts}
+                      updateTer={updateTer}
+                      isCommodity={isCommodityAsset}
+                    >
                       <Button
                         size="sm"
                         variant="ghost"
@@ -209,8 +234,8 @@ export function AssetsList({ assets, isLoading, terMap, updateTer }: AssetsListP
                     }
                   />
                   <MetricCell
-                    label="Geïnvesteerd"
-                    value={<MoneyValue amount={fifo.invested} className="font-medium" />}
+                    label="Inleg"
+                    value={<MoneyValue amount={fifo.netInvested} className="font-medium" />}
                   />
                   <MetricCell
                     label="Actuele waarde"
@@ -222,8 +247,8 @@ export function AssetsList({ assets, isLoading, terMap, updateTer }: AssetsListP
                       <ReturnValue
                         amount={fifo.unrealized}
                         percentage={
-                          fifo.invested > 0
-                            ? (fifo.unrealized / fifo.invested) * 100
+                          fifo.netInvested > 0
+                            ? (fifo.unrealized / fifo.netInvested) * 100
                             : undefined
                         }
                         className="font-medium"
@@ -242,10 +267,30 @@ export function AssetsList({ assets, isLoading, terMap, updateTer }: AssetsListP
                       </span>
                     }
                   />
+                  {totalTxFees > 0 && (
+                    <MetricCell
+                      label="Totale transactiekosten"
+                      value={
+                        <span className="num font-medium text-loss">
+                          -{formatEuro(totalTxFees)}
+                        </span>
+                      }
+                    />
+                  )}
+                  {isStock && !isCommodityAsset && hasTer && totalTerCosts > 0 && (
+                    <MetricCell
+                      label="Lopende kosten (TER)"
+                      value={
+                        <span className="num font-medium text-loss">
+                          -{formatEuro(totalTerCosts)}
+                        </span>
+                      }
+                    />
+                  )}
                 </div>
 
-                {/* TER field — stocks only */}
-                {isStock && (
+                {/* TER field — stocks (not commodities) with ongoing costs enabled only */}
+                {isStock && !isCommodityAsset && ongoingCostsMap[asset.ticker] && (
                   <div className="flex items-center gap-2 pt-1 border-t border-border/50">
                     <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">
                       TER (lopende kosten):
@@ -321,6 +366,7 @@ export function AssetsList({ assets, isLoading, terMap, updateTer }: AssetsListP
                   assetType={asset.assetType}
                   terMap={terMap}
                   ticker={asset.ticker}
+                  isCommodity={isCommodityAsset}
                 />
               </div>
             )}

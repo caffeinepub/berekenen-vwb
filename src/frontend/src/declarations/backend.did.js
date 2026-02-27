@@ -13,12 +13,18 @@ export const AssetType = IDL.Variant({
   'crypto' : IDL.Null,
 });
 export const Time = IDL.Int;
+export const LoanTransactionType = IDL.Variant({
+  'interestReceived' : IDL.Null,
+  'repaymentReceived' : IDL.Null,
+});
 export const TransactionType = IDL.Variant({
   'buy' : IDL.Null,
+  'dividend' : IDL.Null,
   'sell' : IDL.Null,
   'stakingReward' : IDL.Null,
 });
 export const TransactionView = IDL.Record({
+  'euroValue' : IDL.Opt(IDL.Float64),
   'transactionType' : TransactionType,
   'asset' : IDL.Text,
   'date' : Time,
@@ -35,6 +41,31 @@ export const AssetView = IDL.Record({
   'assetType' : AssetType,
   'transactions' : IDL.Vec(TransactionView),
 });
+export const LoanStatus = IDL.Variant({
+  'repaid' : IDL.Null,
+  'active' : IDL.Null,
+  'defaulted' : IDL.Null,
+});
+export const LoanTransactionView = IDL.Record({
+  'id' : IDL.Nat,
+  'transactionType' : LoanTransactionType,
+  'date' : Time,
+  'loanId' : IDL.Nat,
+  'notes' : IDL.Opt(IDL.Text),
+  'amount' : IDL.Float64,
+});
+export const LoanView = IDL.Record({
+  'id' : IDL.Nat,
+  'status' : LoanStatus,
+  'endDate' : IDL.Opt(Time),
+  'name' : IDL.Text,
+  'durationMonths' : IDL.Opt(IDL.Nat),
+  'notes' : IDL.Opt(IDL.Text),
+  'interestRatePercent' : IDL.Opt(IDL.Float64),
+  'transactions' : IDL.Vec(LoanTransactionView),
+  'loanedAmount' : IDL.Float64,
+  'startDate' : Time,
+});
 export const AssetHistoryView = IDL.Record({
   'timestamp' : Time,
   'price' : IDL.Float64,
@@ -47,11 +78,32 @@ export const StakingRewardView = IDL.Record({
 export const idlService = IDL.Service({
   'addAsset' : IDL.Func([IDL.Text, IDL.Text, AssetType, IDL.Float64], [], []),
   'addHistoricalData' : IDL.Func([IDL.Text, Time, IDL.Float64], [], []),
+  'addLoan' : IDL.Func(
+      [
+        IDL.Text,
+        Time,
+        IDL.Float64,
+        IDL.Opt(IDL.Float64),
+        IDL.Opt(Time),
+        IDL.Opt(IDL.Nat),
+        IDL.Opt(IDL.Text),
+      ],
+      [IDL.Nat],
+      [],
+    ),
+  'addLoanTransaction' : IDL.Func(
+      [IDL.Nat, LoanTransactionType, Time, IDL.Float64, IDL.Opt(IDL.Text)],
+      [IDL.Nat],
+      [],
+    ),
   'addStakingReward' : IDL.Func([IDL.Text, Time, IDL.Float64], [], []),
   'addTransaction' : IDL.Func([TransactionView], [], []),
   'deleteAsset' : IDL.Func([IDL.Text], [], []),
+  'deleteLoan' : IDL.Func([IDL.Nat], [], []),
+  'deleteLoanTransaction' : IDL.Func([IDL.Nat, IDL.Nat], [], []),
   'deleteTransaction' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'getAllAssets' : IDL.Func([], [IDL.Vec(AssetView)], ['query']),
+  'getAllLoans' : IDL.Func([], [IDL.Vec(LoanView)], ['query']),
   'getAsset' : IDL.Func([IDL.Text], [AssetView], ['query']),
   'getHistoricalData' : IDL.Func(
       [IDL.Text],
@@ -73,6 +125,21 @@ export const idlService = IDL.Service({
       [],
       [],
     ),
+  'updateLoan' : IDL.Func(
+      [
+        IDL.Nat,
+        IDL.Text,
+        Time,
+        IDL.Float64,
+        IDL.Opt(IDL.Float64),
+        IDL.Opt(Time),
+        IDL.Opt(IDL.Nat),
+        IDL.Opt(IDL.Text),
+        LoanStatus,
+      ],
+      [],
+      [],
+    ),
   'updateTransaction' : IDL.Func([IDL.Text, IDL.Nat, TransactionView], [], []),
 });
 
@@ -81,12 +148,18 @@ export const idlInitArgs = [];
 export const idlFactory = ({ IDL }) => {
   const AssetType = IDL.Variant({ 'stock' : IDL.Null, 'crypto' : IDL.Null });
   const Time = IDL.Int;
+  const LoanTransactionType = IDL.Variant({
+    'interestReceived' : IDL.Null,
+    'repaymentReceived' : IDL.Null,
+  });
   const TransactionType = IDL.Variant({
     'buy' : IDL.Null,
+    'dividend' : IDL.Null,
     'sell' : IDL.Null,
     'stakingReward' : IDL.Null,
   });
   const TransactionView = IDL.Record({
+    'euroValue' : IDL.Opt(IDL.Float64),
     'transactionType' : TransactionType,
     'asset' : IDL.Text,
     'date' : Time,
@@ -103,6 +176,31 @@ export const idlFactory = ({ IDL }) => {
     'assetType' : AssetType,
     'transactions' : IDL.Vec(TransactionView),
   });
+  const LoanStatus = IDL.Variant({
+    'repaid' : IDL.Null,
+    'active' : IDL.Null,
+    'defaulted' : IDL.Null,
+  });
+  const LoanTransactionView = IDL.Record({
+    'id' : IDL.Nat,
+    'transactionType' : LoanTransactionType,
+    'date' : Time,
+    'loanId' : IDL.Nat,
+    'notes' : IDL.Opt(IDL.Text),
+    'amount' : IDL.Float64,
+  });
+  const LoanView = IDL.Record({
+    'id' : IDL.Nat,
+    'status' : LoanStatus,
+    'endDate' : IDL.Opt(Time),
+    'name' : IDL.Text,
+    'durationMonths' : IDL.Opt(IDL.Nat),
+    'notes' : IDL.Opt(IDL.Text),
+    'interestRatePercent' : IDL.Opt(IDL.Float64),
+    'transactions' : IDL.Vec(LoanTransactionView),
+    'loanedAmount' : IDL.Float64,
+    'startDate' : Time,
+  });
   const AssetHistoryView = IDL.Record({
     'timestamp' : Time,
     'price' : IDL.Float64,
@@ -115,11 +213,32 @@ export const idlFactory = ({ IDL }) => {
   return IDL.Service({
     'addAsset' : IDL.Func([IDL.Text, IDL.Text, AssetType, IDL.Float64], [], []),
     'addHistoricalData' : IDL.Func([IDL.Text, Time, IDL.Float64], [], []),
+    'addLoan' : IDL.Func(
+        [
+          IDL.Text,
+          Time,
+          IDL.Float64,
+          IDL.Opt(IDL.Float64),
+          IDL.Opt(Time),
+          IDL.Opt(IDL.Nat),
+          IDL.Opt(IDL.Text),
+        ],
+        [IDL.Nat],
+        [],
+      ),
+    'addLoanTransaction' : IDL.Func(
+        [IDL.Nat, LoanTransactionType, Time, IDL.Float64, IDL.Opt(IDL.Text)],
+        [IDL.Nat],
+        [],
+      ),
     'addStakingReward' : IDL.Func([IDL.Text, Time, IDL.Float64], [], []),
     'addTransaction' : IDL.Func([TransactionView], [], []),
     'deleteAsset' : IDL.Func([IDL.Text], [], []),
+    'deleteLoan' : IDL.Func([IDL.Nat], [], []),
+    'deleteLoanTransaction' : IDL.Func([IDL.Nat, IDL.Nat], [], []),
     'deleteTransaction' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'getAllAssets' : IDL.Func([], [IDL.Vec(AssetView)], ['query']),
+    'getAllLoans' : IDL.Func([], [IDL.Vec(LoanView)], ['query']),
     'getAsset' : IDL.Func([IDL.Text], [AssetView], ['query']),
     'getHistoricalData' : IDL.Func(
         [IDL.Text],
@@ -138,6 +257,21 @@ export const idlFactory = ({ IDL }) => {
       ),
     'updateAsset' : IDL.Func(
         [IDL.Text, IDL.Text, AssetType, IDL.Float64],
+        [],
+        [],
+      ),
+    'updateLoan' : IDL.Func(
+        [
+          IDL.Nat,
+          IDL.Text,
+          Time,
+          IDL.Float64,
+          IDL.Opt(IDL.Float64),
+          IDL.Opt(Time),
+          IDL.Opt(IDL.Nat),
+          IDL.Opt(IDL.Text),
+          LoanStatus,
+        ],
         [],
         [],
       ),

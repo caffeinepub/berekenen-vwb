@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { AssetView, AssetType, TransactionType } from "../backend.d";
 import { useAddTransaction } from "../hooks/useQueries";
@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +30,8 @@ interface AddTransactionDialogProps {
   assets: AssetView[];
   defaultTicker?: string;
   children?: React.ReactNode;
+  /** Set of tickers that are commodities — hides dividend option */
+  commodityTickers?: Set<string>;
 }
 
 const INITIAL_FORM = {
@@ -40,29 +41,50 @@ const INITIAL_FORM = {
   quantity: "",
   pricePerUnit: "",
   fees: "",
-  hasOngoingCosts: false,
   notes: "",
+  euroValue: "",
+  stakingEuroValue: "",
 };
 
 export function AddTransactionDialog({
   assets,
   defaultTicker,
   children,
+  commodityTickers,
 }: AddTransactionDialogProps) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...INITIAL_FORM, ticker: defaultTicker ?? "" });
   const addTransaction = useAddTransaction();
+  // Track whether the sell price was auto-filled (so manual edits are preserved)
+  const sellPriceAutoFilled = useRef(false);
 
   useEffect(() => {
     if (open) {
       setForm({ ...INITIAL_FORM, ticker: defaultTicker ?? "" });
+      sellPriceAutoFilled.current = false;
     }
   }, [open, defaultTicker]);
 
   const selectedAsset = assets.find((a) => a.ticker === form.ticker);
   const isCrypto = selectedAsset?.assetType === AssetType.crypto;
-  const isStock = selectedAsset?.assetType === AssetType.stock;
+  const isCommodity = !!(selectedAsset && commodityTickers?.has(selectedAsset.ticker));
   const isStaking = form.transactionType === TransactionType.stakingReward;
+  const isDividend = form.transactionType === TransactionType.dividend;
+
+  // Auto-fill sell price with current asset price when switching to sell type
+  useEffect(() => {
+    if (
+      form.transactionType === TransactionType.sell &&
+      selectedAsset &&
+      selectedAsset.currentPrice > 0 &&
+      !sellPriceAutoFilled.current
+    ) {
+      setForm((p) => ({ ...p, pricePerUnit: String(selectedAsset.currentPrice) }));
+      sellPriceAutoFilled.current = true;
+    } else if (form.transactionType !== TransactionType.sell) {
+      sellPriceAutoFilled.current = false;
+    }
+  }, [form.transactionType, selectedAsset]);
 
   // Calculate available balance for sell validation
   const availableBalance =
@@ -79,6 +101,34 @@ export function AddTransactionDialog({
 
     if (!form.ticker) {
       toast.error("Selecteer een asset");
+      return;
+    }
+
+    // Dividend: only needs euroValue
+    if (isDividend) {
+      const parsedEuroValue = parseFloat(form.euroValue.replace(",", "."));
+      if (isNaN(parsedEuroValue) || parsedEuroValue <= 0) {
+        toast.error("Ongeldig ontvangen bedrag");
+        return;
+      }
+      const dateObj = dateInputToDate(form.date);
+      const dateBigint = dateToBigintNano(dateObj);
+      try {
+        await addTransaction.mutateAsync({
+          asset: form.ticker,
+          transactionType: form.transactionType,
+          date: dateBigint,
+          quantity: 0,
+          pricePerUnit: 0,
+          fees: undefined,
+          euroValue: parsedEuroValue,
+          notes: form.notes.trim() || undefined,
+        });
+        toast.success("Dividend toegevoegd");
+        setOpen(false);
+      } catch {
+        toast.error("Fout bij het toevoegen van dividend");
+      }
       return;
     }
 
@@ -107,6 +157,17 @@ export function AddTransactionDialog({
       return;
     }
 
+    // Staking: also requires a euro value at time of receipt
+    let stakingEuro: number | undefined;
+    if (isStaking) {
+      const parsed = parseFloat(form.stakingEuroValue.replace(",", "."));
+      if (isNaN(parsed) || parsed < 0) {
+        toast.error("Ongeldige eurowaarde voor staking");
+        return;
+      }
+      stakingEuro = parsed;
+    }
+
     const dateObj = dateInputToDate(form.date);
     const dateBigint = dateToBigintNano(dateObj);
 
@@ -118,7 +179,7 @@ export function AddTransactionDialog({
         quantity: qty,
         pricePerUnit: isStaking ? 0 : price,
         fees: fees,
-        hasOngoingCosts: !isStaking ? form.hasOngoingCosts : undefined,
+        euroValue: isStaking ? stakingEuro : undefined,
         notes: form.notes.trim() || undefined,
       });
       toast.success("Transactie toegevoegd");
@@ -188,6 +249,11 @@ export function AddTransactionDialog({
                     Staking reward
                   </SelectItem>
                 )}
+                {!isCrypto && !isCommodity && (
+                  <SelectItem value={TransactionType.dividend}>
+                    Dividend
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -206,42 +272,63 @@ export function AddTransactionDialog({
             />
           </div>
 
-          {/* Quantity */}
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="tx-qty">
-              Aantal stuks <span className="text-loss">*</span>
-            </Label>
-            <div className="relative">
+          {/* Dividend: only show euro value field */}
+          {isDividend && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tx-euro-value">
+                Ontvangen bedrag (€) <span className="text-loss">*</span>
+              </Label>
               <Input
-                id="tx-qty"
+                id="tx-euro-value"
                 type="number"
-                step="any"
-                min="0.00000001"
-                placeholder={isCrypto ? "0.00000000" : "0,0000"}
-                value={form.quantity}
-                onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
-                className={cn(isQuantityExceeded && "border-loss focus-visible:ring-loss")}
+                step="0.01"
+                min="0.01"
+                placeholder="0,00"
+                value={form.euroValue}
+                onChange={(e) => setForm((p) => ({ ...p, euroValue: e.target.value }))}
                 required
               />
             </div>
-            {availableBalance !== null && (
-              <p
-                className={cn(
-                  "text-xs flex items-center gap-1",
-                  isQuantityExceeded ? "text-loss" : "text-muted-foreground"
-                )}
-              >
-                {isQuantityExceeded && <AlertCircle className="w-3 h-3" />}
-                Beschikbaar saldo: {formatQuantity(availableBalance, isCrypto)} stuks
-              </p>
-            )}
-          </div>
+          )}
 
-          {/* Price per unit — not for staking */}
-          {!isStaking && (
+          {/* Quantity — not for dividend */}
+          {!isDividend && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tx-qty">
+                {isCrypto ? "Hoeveelheid" : isCommodity ? "Aantal eenheden" : "Aantal stuks"} <span className="text-loss">*</span>
+              </Label>
+              <div className="relative">
+                <Input
+                  id="tx-qty"
+                  type="number"
+                  step="any"
+                  min="0.00000001"
+                  placeholder={isCrypto ? "0.00000000" : "0,0000"}
+                  value={form.quantity}
+                  onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
+                  className={cn(isQuantityExceeded && "border-loss focus-visible:ring-loss")}
+                  required
+                />
+              </div>
+              {availableBalance !== null && (
+                <p
+                  className={cn(
+                    "text-xs flex items-center gap-1",
+                    isQuantityExceeded ? "text-loss" : "text-muted-foreground"
+                  )}
+                >
+                  {isQuantityExceeded && <AlertCircle className="w-3 h-3" />}
+                  Beschikbaar saldo: {formatQuantity(availableBalance, isCrypto)} stuks
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Price per unit — not for staking or dividend */}
+          {!isStaking && !isDividend && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-price">
-                Prijs per stuk (€) <span className="text-loss">*</span>
+                {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"} <span className="text-loss">*</span>
               </Label>
               <Input
                 id="tx-price"
@@ -250,16 +337,36 @@ export function AddTransactionDialog({
                 min="0"
                 placeholder="0,000000"
                 value={form.pricePerUnit}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, pricePerUnit: e.target.value }))
-                }
-                required={!isStaking}
+                onChange={(e) => {
+                  sellPriceAutoFilled.current = true; // user manually edited — lock it
+                  setForm((p) => ({ ...p, pricePerUnit: e.target.value }));
+                }}
+                required={!isStaking && !isDividend}
               />
             </div>
           )}
 
-          {/* Fees — not for staking */}
-          {!isStaking && (
+          {/* Staking: euro value at receipt */}
+          {isStaking && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tx-staking-euro">
+                Waarde in euro op moment van ontvangst (€) <span className="text-loss">*</span>
+              </Label>
+              <Input
+                id="tx-staking-euro"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="0,00"
+                value={form.stakingEuroValue}
+                onChange={(e) => setForm((p) => ({ ...p, stakingEuroValue: e.target.value }))}
+                required
+              />
+            </div>
+          )}
+
+          {/* Fees — not for staking or dividend */}
+          {!isStaking && !isDividend && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-fees">Transactiekosten (€)</Label>
               <Input
@@ -271,30 +378,6 @@ export function AddTransactionDialog({
                 value={form.fees}
                 onChange={(e) => setForm((p) => ({ ...p, fees: e.target.value }))}
               />
-            </div>
-          )}
-
-          {/* Ongoing costs checkbox — not for staking, not for crypto */}
-          {!isStaking && isStock && (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-start gap-3 rounded-md border border-border bg-muted/30 p-3">
-                <Checkbox
-                  id="tx-ongoing-costs"
-                  checked={form.hasOngoingCosts}
-                  onCheckedChange={(checked) =>
-                    setForm((p) => ({ ...p, hasOngoingCosts: checked === true }))
-                  }
-                  className="mt-0.5"
-                />
-                <div className="flex flex-col gap-0.5">
-                  <Label htmlFor="tx-ongoing-costs" className="cursor-pointer font-medium text-sm">
-                    Lopende kosten van toepassing
-                  </Label>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Vink aan als deze positie meetelt voor jaarlijkse lopende kosten berekening
-                  </p>
-                </div>
-              </div>
             </div>
           )}
 
@@ -321,7 +404,7 @@ export function AddTransactionDialog({
             </Button>
             <Button
               type="submit"
-              disabled={addTransaction.isPending || isQuantityExceeded}
+              disabled={addTransaction.isPending || (!isDividend && isQuantityExceeded)}
             >
               {addTransaction.isPending && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

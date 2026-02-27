@@ -20,12 +20,39 @@ export interface AssetView {
   'assetType' : AssetType,
   'transactions' : Array<TransactionView>,
 }
+export type LoanStatus = { 'repaid' : null } |
+  { 'active' : null } |
+  { 'defaulted' : null };
+export type LoanTransactionType = { 'interestReceived' : null } |
+  { 'repaymentReceived' : null };
+export interface LoanTransactionView {
+  'id' : bigint,
+  'transactionType' : LoanTransactionType,
+  'date' : Time,
+  'loanId' : bigint,
+  'notes' : [] | [string],
+  'amount' : number,
+}
+export interface LoanView {
+  'id' : bigint,
+  'status' : LoanStatus,
+  'endDate' : [] | [Time],
+  'name' : string,
+  'durationMonths' : [] | [bigint],
+  'notes' : [] | [string],
+  'interestRatePercent' : [] | [number],
+  'transactions' : Array<LoanTransactionView>,
+  'loanedAmount' : number,
+  'startDate' : Time,
+}
 export interface StakingRewardView { 'date' : Time, 'quantity' : number }
 export type Time = bigint;
 export type TransactionType = { 'buy' : null } |
+  { 'dividend' : null } |
   { 'sell' : null } |
   { 'stakingReward' : null };
 export interface TransactionView {
+  'euroValue' : [] | [number],
   'transactionType' : TransactionType,
   'asset' : string,
   'date' : Time,
@@ -38,16 +65,49 @@ export interface TransactionView {
 export interface _SERVICE {
   'addAsset' : ActorMethod<[string, string, AssetType, number], undefined>,
   'addHistoricalData' : ActorMethod<[string, Time, number], undefined>,
+  'addLoan' : ActorMethod<
+    [
+      string,
+      Time,
+      number,
+      [] | [number],
+      [] | [Time],
+      [] | [bigint],
+      [] | [string],
+    ],
+    bigint
+  >,
+  'addLoanTransaction' : ActorMethod<
+    [bigint, LoanTransactionType, Time, number, [] | [string]],
+    bigint
+  >,
   'addStakingReward' : ActorMethod<[string, Time, number], undefined>,
   'addTransaction' : ActorMethod<[TransactionView], undefined>,
   'deleteAsset' : ActorMethod<[string], undefined>,
+  'deleteLoan' : ActorMethod<[bigint], undefined>,
+  'deleteLoanTransaction' : ActorMethod<[bigint, bigint], undefined>,
   'deleteTransaction' : ActorMethod<[string, bigint], undefined>,
   'getAllAssets' : ActorMethod<[], Array<AssetView>>,
+  'getAllLoans' : ActorMethod<[], Array<LoanView>>,
   'getAsset' : ActorMethod<[string], AssetView>,
   'getHistoricalData' : ActorMethod<[string], Array<AssetHistoryView>>,
   'getStakingRewards' : ActorMethod<[string], Array<StakingRewardView>>,
   'getTransactions' : ActorMethod<[string], Array<TransactionView>>,
   'updateAsset' : ActorMethod<[string, string, AssetType, number], undefined>,
+  'updateLoan' : ActorMethod<
+    [
+      bigint,
+      string,
+      Time,
+      number,
+      [] | [number],
+      [] | [Time],
+      [] | [bigint],
+      [] | [string],
+      LoanStatus,
+    ],
+    undefined
+  >,
   'updateTransaction' : ActorMethod<
     [string, bigint, TransactionView],
     undefined
