@@ -3,11 +3,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { UserSettingsView } from "../backend.d";
 import { useActor } from "./useActor";
 
-// ─── localStorage keys (kept for cache/migration) ────────────────────────────
+// ─── localStorage keys (used only as write-through cache) ─────────────────────
 const TER_KEY = "vwb_ter_percentages";
 const ONGOING_COSTS_KEY = "vwb_ongoing_costs_flags";
 const COMMODITY_TICKERS_KEY = "vwb_commodity_tickers";
 const API_KEY_STORAGE = "vwb_twelve_data_api_key";
+const ETF_FLAGS_KEY = "vwb_etf_flags";
 
 // ─── localStorage helpers ─────────────────────────────────────────────────────
 function readLocalTerMap(): Record<string, number> {
@@ -43,7 +44,27 @@ function readLocalApiKey(): string {
   return localStorage.getItem(API_KEY_STORAGE) ?? "";
 }
 
-function writeLocalSettings(settings: {
+// Migrate ETF flags from old localStorage key into ongoingCosts entries
+function mergeEtfFlags(
+  ongoingCostsMap: Record<string, boolean>,
+): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(ETF_FLAGS_KEY);
+    if (!raw) return ongoingCostsMap;
+    const etfFlags: Record<string, boolean> = JSON.parse(raw);
+    const merged = { ...ongoingCostsMap };
+    for (const [ticker, isEtf] of Object.entries(etfFlags)) {
+      if (isEtf && !(ticker in merged)) {
+        merged[ticker] = true;
+      }
+    }
+    return merged;
+  } catch {
+    return ongoingCostsMap;
+  }
+}
+
+function writeLocalCache(settings: {
   terMap: Record<string, number>;
   ongoingCostsMap: Record<string, boolean>;
   commodityTickers: string[];
@@ -61,17 +82,12 @@ function writeLocalSettings(settings: {
   localStorage.setItem(API_KEY_STORAGE, settings.twelveDataApiKey);
 }
 
-// ─── Helper: check if local storage has meaningful data ──────────────────────
 function hasLocalData(): boolean {
-  const terMap = readLocalTerMap();
-  const ongoingCostsMap = readLocalOngoingCostsMap();
-  const commodityTickers = readLocalCommodityTickers();
-  const apiKey = readLocalApiKey();
   return (
-    Object.keys(terMap).length > 0 ||
-    Object.keys(ongoingCostsMap).length > 0 ||
-    commodityTickers.length > 0 ||
-    apiKey.length > 0
+    Object.keys(readLocalTerMap()).length > 0 ||
+    Object.keys(readLocalOngoingCostsMap()).length > 0 ||
+    readLocalCommodityTickers().length > 0 ||
+    readLocalApiKey().length > 0
   );
 }
 
@@ -88,35 +104,38 @@ function hasBackendData(settings: UserSettingsView): boolean {
 export function useUserSettings() {
   const { actor, isFetching: isActorFetching } = useActor();
   const queryClient = useQueryClient();
-  const migrationDone = useRef(false);
 
-  // Local state — initialized from localStorage as cache
+  // One-time migration flag
+  const migrationDone = useRef(false);
+  // Track if we have applied backend data (to avoid applying empty backend data
+  // over valid local state on first load)
+  const backendApplied = useRef(false);
+
+  // Local state — pre-seeded from localStorage as optimistic cache
   const [terMap, setTerMap] = useState<Record<string, number>>(readLocalTerMap);
   const [ongoingCostsMap, setOngoingCostsMap] = useState<
     Record<string, boolean>
-  >(readLocalOngoingCostsMap);
+  >(() => mergeEtfFlags(readLocalOngoingCostsMap()));
   const [commodityTickers, setCommodityTickers] = useState<string[]>(
     readLocalCommodityTickers,
   );
   const [twelveDataApiKey, setTwelveDataApiKeyState] =
     useState<string>(readLocalApiKey);
 
-  // ─── Fetch settings from backend ──────────────────────────────────────────
+  // ─── Backend query — always re-fetch after actor changes ──────────────────
+  // Use actor principal as part of queryKey so switching users forces a new fetch
+  const actorPrincipal = actor ? "authenticated" : "anonymous";
   const { data: backendSettings, isLoading } = useQuery<UserSettingsView>({
-    queryKey: ["userSettings"],
+    queryKey: ["userSettings", actorPrincipal],
     queryFn: async () => {
-      if (!actor) {
-        return {
-          terEntries: [],
-          twelveDataApiKey: "",
-          commodityTickers: [],
-          ongoingCostsEntries: [],
-        };
-      }
+      if (!actor) throw new Error("No actor");
       return actor.getUserSettings();
     },
     enabled: !!actor && !isActorFetching,
-    staleTime: 30_000,
+    staleTime: 0, // Always treat as stale so it refetches after login
+    gcTime: 0, // Don't cache between sessions
+    retry: 3,
+    retryDelay: 1000,
   });
 
   // ─── Save mutation ─────────────────────────────────────────────────────────
@@ -130,54 +149,79 @@ export function useUserSettings() {
     },
   });
 
-  // ─── Sync backend → local state + localStorage (and migrate if needed) ────
-  // biome-ignore lint/correctness/useExhaustiveDependencies: saveMutation.mutate is stable; only backendSettings matters here
+  // ─── Sync backend → local state ───────────────────────────────────────────
+  // biome-ignore lint/correctness/useExhaustiveDependencies: saveMutation.mutate is stable from useMutation; only re-run when backendSettings changes
   useEffect(() => {
     if (!backendSettings) return;
 
+    // One-time migration: if backend is empty but localStorage has data, push it up
     if (
       !hasBackendData(backendSettings) &&
       !migrationDone.current &&
       hasLocalData()
     ) {
-      // One-time migration: push localStorage data up to backend
       migrationDone.current = true;
-      const migrationPayload: UserSettingsView = {
+      const localOngoing = mergeEtfFlags(readLocalOngoingCostsMap());
+      const payload: UserSettingsView = {
         terEntries: Object.entries(readLocalTerMap()),
         twelveDataApiKey: readLocalApiKey(),
         commodityTickers: readLocalCommodityTickers(),
-        ongoingCostsEntries: Object.entries(readLocalOngoingCostsMap()),
+        ongoingCostsEntries: Object.entries(localOngoing),
       };
-      saveMutation.mutate(migrationPayload);
-      // Apply migrated data to local state
+      saveMutation.mutate(payload);
+      // Apply local data to state
       setTerMap(readLocalTerMap());
-      setOngoingCostsMap(readLocalOngoingCostsMap());
+      setOngoingCostsMap(localOngoing);
       setCommodityTickers(readLocalCommodityTickers());
       setTwelveDataApiKeyState(readLocalApiKey());
-    } else if (hasBackendData(backendSettings)) {
-      // Backend has data — apply it to local state and cache to localStorage
-      const newTerMap = Object.fromEntries(backendSettings.terEntries);
-      const newOngoingCostsMap = Object.fromEntries(
-        backendSettings.ongoingCostsEntries,
-      );
-      const newCommodityTickers = backendSettings.commodityTickers;
-      const newApiKey = backendSettings.twelveDataApiKey;
-
-      setTerMap(newTerMap);
-      setOngoingCostsMap(newOngoingCostsMap);
-      setCommodityTickers(newCommodityTickers);
-      setTwelveDataApiKeyState(newApiKey);
-
-      writeLocalSettings({
-        terMap: newTerMap,
-        ongoingCostsMap: newOngoingCostsMap,
-        commodityTickers: newCommodityTickers,
-        twelveDataApiKey: newApiKey,
-      });
+      backendApplied.current = true;
+      return;
     }
-  }, [backendSettings]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Helper to build full settings payload ─────────────────────────────────
+    // Normal case: apply backend data (backend is always the source of truth after login)
+    const newTerMap = Object.fromEntries(backendSettings.terEntries);
+    const newOngoingCostsMap = Object.fromEntries(
+      backendSettings.ongoingCostsEntries,
+    );
+    const newCommodityTickers = backendSettings.commodityTickers;
+    const newApiKey = backendSettings.twelveDataApiKey;
+
+    setTerMap(newTerMap);
+    setOngoingCostsMap(newOngoingCostsMap);
+    setCommodityTickers(newCommodityTickers);
+    setTwelveDataApiKeyState(newApiKey);
+    backendApplied.current = true;
+
+    // Write-through to localStorage as cache for instant loading on next session
+    writeLocalCache({
+      terMap: newTerMap,
+      ongoingCostsMap: newOngoingCostsMap,
+      commodityTickers: newCommodityTickers,
+      twelveDataApiKey: newApiKey,
+    });
+  }, [backendSettings]);
+
+  // ─── Build full settings payload from current state ────────────────────────
+  // Use refs to avoid stale closures in update callbacks
+  const terMapRef = useRef(terMap);
+  const ongoingCostsMapRef = useRef(ongoingCostsMap);
+  const commodityTickersRef = useRef(commodityTickers);
+  const twelveDataApiKeyRef = useRef(twelveDataApiKey);
+
+  // Keep refs in sync
+  useEffect(() => {
+    terMapRef.current = terMap;
+  }, [terMap]);
+  useEffect(() => {
+    ongoingCostsMapRef.current = ongoingCostsMap;
+  }, [ongoingCostsMap]);
+  useEffect(() => {
+    commodityTickersRef.current = commodityTickers;
+  }, [commodityTickers]);
+  useEffect(() => {
+    twelveDataApiKeyRef.current = twelveDataApiKey;
+  }, [twelveDataApiKey]);
+
   const buildPayload = useCallback(
     (
       overrides: Partial<{
@@ -186,21 +230,17 @@ export function useUserSettings() {
         commodityTickers: string[];
         twelveDataApiKey: string;
       }> = {},
-    ): UserSettingsView => {
-      const resolvedTerMap = overrides.terMap ?? terMap;
-      const resolvedOngoingCostsMap =
-        overrides.ongoingCostsMap ?? ongoingCostsMap;
-      const resolvedCommodityTickers =
-        overrides.commodityTickers ?? commodityTickers;
-      const resolvedApiKey = overrides.twelveDataApiKey ?? twelveDataApiKey;
-      return {
-        terEntries: Object.entries(resolvedTerMap),
-        ongoingCostsEntries: Object.entries(resolvedOngoingCostsMap),
-        commodityTickers: resolvedCommodityTickers,
-        twelveDataApiKey: resolvedApiKey,
-      };
-    },
-    [terMap, ongoingCostsMap, commodityTickers, twelveDataApiKey],
+    ): UserSettingsView => ({
+      terEntries: Object.entries(overrides.terMap ?? terMapRef.current),
+      ongoingCostsEntries: Object.entries(
+        overrides.ongoingCostsMap ?? ongoingCostsMapRef.current,
+      ),
+      commodityTickers:
+        overrides.commodityTickers ?? commodityTickersRef.current,
+      twelveDataApiKey:
+        overrides.twelveDataApiKey ?? twelveDataApiKeyRef.current,
+    }),
+    [],
   );
 
   // ─── Update functions ──────────────────────────────────────────────────────
@@ -213,9 +253,7 @@ export function useUserSettings() {
         } else {
           next[ticker] = pct;
         }
-        // Persist to localStorage
         localStorage.setItem(TER_KEY, JSON.stringify(next));
-        // Save to backend
         saveMutation.mutate(buildPayload({ terMap: next }));
         return next;
       });
@@ -232,9 +270,7 @@ export function useUserSettings() {
         } else {
           next[ticker] = true;
         }
-        // Persist to localStorage
         localStorage.setItem(ONGOING_COSTS_KEY, JSON.stringify(next));
-        // Save to backend
         saveMutation.mutate(buildPayload({ ongoingCostsMap: next }));
         return next;
       });
@@ -245,9 +281,7 @@ export function useUserSettings() {
   const updateCommodityTickers = useCallback(
     (tickers: string[]) => {
       setCommodityTickers(tickers);
-      // Persist to localStorage
       localStorage.setItem(COMMODITY_TICKERS_KEY, JSON.stringify(tickers));
-      // Save to backend
       saveMutation.mutate(buildPayload({ commodityTickers: tickers }));
     },
     [buildPayload, saveMutation],
@@ -256,23 +290,18 @@ export function useUserSettings() {
   const updateTwelveDataApiKey = useCallback(
     (key: string) => {
       setTwelveDataApiKeyState(key);
-      // Persist to localStorage
       localStorage.setItem(API_KEY_STORAGE, key);
-      // Save to backend
       saveMutation.mutate(buildPayload({ twelveDataApiKey: key }));
     },
     [buildPayload, saveMutation],
   );
 
   return {
-    // State
     terMap,
     ongoingCostsMap,
     commodityTickers,
     twelveDataApiKey,
     isLoading,
-
-    // Updaters
     updateTerMap,
     updateOngoingCostsMap,
     updateCommodityTickers,

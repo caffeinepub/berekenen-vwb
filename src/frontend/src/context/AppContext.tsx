@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import { AssetType, type AssetView, type LoanView } from "../backend.d";
@@ -66,7 +67,6 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
   const [userName, setUserNameState] = useState<string>("");
-  const [isActorReady, setIsActorReady] = useState(false);
 
   const { data: assets = [], isLoading, refetch, isFetching } = useAllAssets();
   const { data: loans = [] } = useAllLoans();
@@ -85,17 +85,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     updateTwelveDataApiKey,
   } = useUserSettings();
 
-  // Convert array → Set for downstream consumers
-  const commodityTickers = new Set(
-    commodityTickersArray.map((t) => t.toUpperCase()),
+  // Convert array → Set for downstream consumers (memoized to avoid recreation)
+  const commodityTickers = useMemo(
+    () => new Set(commodityTickersArray.map((t) => t.toUpperCase())),
+    [commodityTickersArray],
   );
 
-  // ─── Actor readiness ───────────────────────────────────────────────────────
-  useEffect(() => {
-    if (actor && !isActorFetching) {
-      setIsActorReady(true);
-    }
-  }, [actor, isActorFetching]);
+  // ─── Actor readiness — derived, not state ─────────────────────────────────
+  const isActorReady = !!actor && !isActorFetching;
 
   // ─── User name ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -119,13 +116,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [actor],
   );
 
-  // ─── Filtered assets per section ──────────────────────────────────────────
-  const stockAssets = assets.filter(
-    (a) => a.assetType === AssetType.stock && !commodityTickers.has(a.ticker),
+  // ─── Filtered assets per section (memoized) ───────────────────────────────
+  const stockAssets = useMemo(
+    () =>
+      assets.filter(
+        (a) =>
+          a.assetType === AssetType.stock && !commodityTickers.has(a.ticker),
+      ),
+    [assets, commodityTickers],
   );
-  const cryptoAssets = assets.filter((a) => a.assetType === AssetType.crypto);
-  const commodityAssets = assets.filter(
-    (a) => a.assetType === AssetType.stock && commodityTickers.has(a.ticker),
+  const cryptoAssets = useMemo(
+    () => assets.filter((a) => a.assetType === AssetType.crypto),
+    [assets],
+  );
+  const commodityAssets = useMemo(
+    () =>
+      assets.filter(
+        (a) =>
+          a.assetType === AssetType.stock && commodityTickers.has(a.ticker),
+      ),
+    [assets, commodityTickers],
   );
 
   // ─── Wrapped update functions (matching original API surface) ─────────────

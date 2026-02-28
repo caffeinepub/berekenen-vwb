@@ -57,17 +57,29 @@ function CustomLineTooltip({
   active,
   payload,
   label,
-}: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) {
+}: {
+  active?: boolean;
+  payload?: Array<{ value: number; name: string; color: string }>;
+  label?: string;
+}) {
   if (!active || !payload?.length) return null;
   return (
     <div className="bg-popover border border-border rounded-lg px-3 py-2 shadow-lg text-xs">
       <div className="font-medium text-foreground mb-1">{label}</div>
-      <div className="text-muted-foreground">
-        Waarde:{" "}
-        <span className="text-foreground font-semibold num">
-          {formatEuro(payload[0].value)}
-        </span>
-      </div>
+      {payload.map((p) => (
+        <div key={p.name} className="flex items-center gap-2">
+          <span
+            className="w-2 h-2 rounded-full"
+            style={{ background: p.color }}
+          />
+          <span className="text-muted-foreground">
+            {p.name === "value" ? "Waarde" : "Inleg"}:
+          </span>
+          <span className="text-foreground font-semibold num">
+            {formatEuro(p.value)}
+          </span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -195,7 +207,7 @@ export function PortfolioCharts({
     };
   }, [loans]);
 
-  // Grafiek 1: lijndiagram
+  // Grafiek 1: lijndiagram (waarde + inleg over tijd)
   const lineChartData = useMemo(() => {
     const allDates: Date[] = [];
     for (const asset of assets)
@@ -222,21 +234,33 @@ export function PortfolioCharts({
         monthStart.getMonth() + 1,
         0,
       ).getTime();
+
       let totalValue = 0;
+      let totalInleg = 0;
+
       for (const asset of assets) {
         let qty = 0;
+        let inleg = 0;
         for (const tx of asset.transactions) {
           const txMs = Number(tx.date / 1_000_000n);
           if (txMs <= monthEndMs) {
-            if (tx.transactionType === TransactionType.buy) qty += tx.quantity;
-            else if (tx.transactionType === TransactionType.sell)
-              qty -= tx.quantity;
-            else if (tx.transactionType === TransactionType.stakingReward)
+            if (tx.transactionType === TransactionType.buy) {
               qty += tx.quantity;
+              inleg += tx.quantity * tx.pricePerUnit + (tx.fees ?? 0);
+            } else if (tx.transactionType === TransactionType.sell) {
+              // Reduce inleg proportionally (FIFO approximation for chart)
+              const sellFraction = qty > 0 ? tx.quantity / qty : 0;
+              inleg -= inleg * sellFraction;
+              qty -= tx.quantity;
+            } else if (tx.transactionType === TransactionType.stakingReward) {
+              qty += tx.quantity;
+            }
           }
         }
         totalValue += Math.max(0, qty) * asset.currentPrice;
+        totalInleg += Math.max(0, inleg);
       }
+
       for (const loan of loans) {
         if (Number(loan.startDate / 1_000_000n) <= monthEndMs) {
           let repaid = 0;
@@ -247,10 +271,17 @@ export function PortfolioCharts({
             )
               repaid += ltx.amount;
           }
-          totalValue += Math.max(0, loan.loanedAmount - repaid);
+          const outstanding = Math.max(0, loan.loanedAmount - repaid);
+          totalValue += outstanding;
+          totalInleg += outstanding;
         }
       }
-      return { label: getMonthLabel(monthStart), value: totalValue };
+
+      return {
+        label: getMonthLabel(monthStart),
+        value: totalValue,
+        inleg: totalInleg,
+      };
     });
   }, [assets, loans]);
 
@@ -381,7 +412,7 @@ export function PortfolioCharts({
                 Portefeuillewaarde over tijd
               </h3>
               <p className="text-xs text-muted-foreground">
-                Totale waarde per maand
+                Totale waarde en inleg per maand
               </p>
             </div>
             <div className="flex gap-1">
@@ -403,46 +434,98 @@ export function PortfolioCharts({
             </div>
           </div>
           {filteredLineData.length >= 2 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart
-                data={filteredLineData}
-                margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
-              >
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  stroke="oklch(var(--border))"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{
-                    fontSize: 11,
-                    fill: "oklch(var(--muted-foreground))",
-                  }}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <YAxis
-                  tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`}
-                  tick={{
-                    fontSize: 11,
-                    fill: "oklch(var(--muted-foreground))",
-                  }}
-                  tickLine={false}
-                  axisLine={false}
-                  width={52}
-                />
-                <Tooltip content={<CustomLineTooltip />} />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke={CHART_COLORS.stocks}
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4, strokeWidth: 0 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <div className="relative">
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart
+                  data={filteredLineData}
+                  margin={{ top: 4, right: 8, bottom: 0, left: 0 }}
+                >
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="oklch(var(--border))"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    tick={{
+                      fontSize: 11,
+                      fill: "oklch(var(--muted-foreground))",
+                    }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis
+                    tickFormatter={(v) => `€${(v / 1000).toFixed(0)}k`}
+                    tick={{
+                      fontSize: 11,
+                      fill: "oklch(var(--muted-foreground))",
+                    }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={52}
+                  />
+                  <Tooltip content={<CustomLineTooltip />} />
+                  <Legend
+                    formatter={(value) => (
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: "oklch(var(--foreground))",
+                        }}
+                      >
+                        {value === "value" ? "Waarde" : "Inleg"}
+                      </span>
+                    )}
+                    iconSize={8}
+                    iconType="circle"
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    name="value"
+                    stroke={CHART_COLORS.stocks}
+                    strokeWidth={2}
+                    dot={false}
+                    activeDot={{ r: 4, strokeWidth: 0 }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="inleg"
+                    name="inleg"
+                    stroke={CHART_COLORS.commodities}
+                    strokeWidth={2}
+                    strokeDasharray="5 3"
+                    dot={false}
+                    activeDot={{ r: 4, strokeWidth: 0 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+              {/* Totaal rendement % rechtsonder */}
+              {(() => {
+                const last = filteredLineData[filteredLineData.length - 1];
+                if (!last || last.inleg <= 0) return null;
+                const returnPct =
+                  ((last.value - last.inleg) / last.inleg) * 100;
+                const isPos = returnPct > 0.005;
+                const isNeg = returnPct < -0.005;
+                return (
+                  <div className="absolute bottom-2 right-3 text-xs font-semibold num">
+                    <span
+                      className={cn(
+                        isPos
+                          ? "text-gain"
+                          : isNeg
+                            ? "text-loss"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      Totaal rendement: {returnPct >= 0 ? "+" : ""}
+                      {returnPct.toFixed(2)}%
+                    </span>
+                  </div>
+                );
+              })()}
+            </div>
           ) : (
             <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">
               Voeg transacties toe om de grafiek te zien.

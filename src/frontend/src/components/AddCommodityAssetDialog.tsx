@@ -20,7 +20,7 @@ import { Loader2, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { AssetType, type AssetView } from "../backend.d";
-import { useCommodities } from "../hooks/useCommodities";
+import { useAppContext } from "../context/AppContext";
 import { useAddAsset } from "../hooks/useQueries";
 
 // ─── Commodity definitions ────────────────────────────────────────────────────
@@ -126,7 +126,7 @@ export function AddCommodityAssetDialog({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const addAsset = useAddAsset();
-  const { addCommodityTicker } = useCommodities();
+  const { addCommodityTicker } = useAppContext();
 
   const existingTickers = useMemo(() => assets.map((a) => a.ticker), [assets]);
 

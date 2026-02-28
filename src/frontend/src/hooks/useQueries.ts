@@ -20,6 +20,8 @@ export function useAllAssets() {
       return actor.getAllAssets();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 
@@ -32,6 +34,8 @@ export function useAsset(ticker: string) {
       return actor.getAsset(ticker);
     },
     enabled: !!actor && !isFetching && !!ticker,
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 
@@ -210,6 +214,8 @@ export function useAllLoans() {
       return actor.getAllLoans();
     },
     enabled: !!actor && !isFetching,
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 
