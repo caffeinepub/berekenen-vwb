@@ -6,6 +6,7 @@ import {
   ExternalLink,
   Info,
   KeyRound,
+  Loader2,
   Palette,
   User,
 } from "lucide-react";
@@ -22,6 +23,7 @@ export function SettingsPage() {
 
   const [inputValue, setInputValue] = useState(twelveDataApiKey);
   const [nameInput, setNameInput] = useState(userName);
+  const [isSavingName, setIsSavingName] = useState(false);
 
   // Sync nameInput when userName loads from backend
   useEffect(() => {
@@ -34,8 +36,17 @@ export function SettingsPage() {
   };
 
   const handleSaveName = async () => {
-    await setUserName(nameInput.trim());
-    toast.success("Naam opgeslagen");
+    const trimmed = nameInput.trim();
+    if (!trimmed) return;
+    setIsSavingName(true);
+    try {
+      await setUserName(trimmed);
+      toast.success("Naam opgeslagen");
+    } catch {
+      toast.error("Naam opslaan mislukt. Probeer opnieuw.");
+    } finally {
+      setIsSavingName(false);
+    }
   };
 
   const isSaved =
@@ -72,9 +83,18 @@ export function SettingsPage() {
               />
               <Button
                 onClick={handleSaveName}
-                disabled={isNameSaved || nameInput.trim().length === 0}
+                disabled={
+                  isNameSaved || nameInput.trim().length === 0 || isSavingName
+                }
               >
-                Opslaan
+                {isSavingName ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Opslaan...
+                  </>
+                ) : (
+                  "Opslaan"
+                )}
               </Button>
             </div>
           </div>

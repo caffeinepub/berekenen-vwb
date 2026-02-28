@@ -53,7 +53,7 @@ export function useAddAsset() {
       currentPrice: number;
     }) => {
       if (!actor) throw new Error("No actor");
-      return actor.addAsset(name, ticker, assetType, currentPrice);
+      return await actor.addAsset(name, ticker, assetType, currentPrice);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
@@ -67,7 +67,7 @@ export function useAddTransaction() {
   return useMutation({
     mutationFn: async (transaction: TransactionView) => {
       if (!actor) throw new Error("No actor");
-      return actor.addTransaction(transaction);
+      return await actor.addTransaction(transaction);
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["assets"] });
@@ -235,7 +235,7 @@ export function useAddLoan() {
       notes?: string;
     }) => {
       if (!actor) throw new Error("No actor");
-      return actor.addLoan(
+      return await actor.addLoan(
         name,
         startDate,
         loanedAmount,
@@ -327,7 +327,7 @@ export function useAddLoanTransaction() {
       notes?: string;
     }) => {
       if (!actor) throw new Error("No actor");
-      return actor.addLoanTransaction(
+      return await actor.addLoanTransaction(
         loanId,
         transactionType,
         date,

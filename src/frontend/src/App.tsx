@@ -16,6 +16,7 @@ import { AssetsList } from "./components/AssetsList";
 import { Dashboard } from "./components/Dashboard";
 import { LoansPage } from "./components/LoansPage";
 import { LoginPage } from "./components/LoginPage";
+import { OnboardingModal } from "./components/OnboardingModal";
 import { PortfolioDashboard } from "./components/PortfolioDashboard";
 import { SettingsPage } from "./components/SettingsPage";
 import { YearOverview } from "./components/YearOverview";
@@ -41,7 +42,13 @@ function AppContent() {
     updateOngoingCosts,
     commodityTickers,
     twelveDataApiKey,
+    userName,
+    setUserName,
+    isActorReady,
   } = useAppContext();
+
+  // Show onboarding if actor is ready but no name set yet
+  const showOnboarding = isActorReady && userName.trim() === "";
 
   const filteredAssets =
     activeSection === "stocks"
@@ -94,6 +101,10 @@ function AppContent() {
   };
 
   const meta = SECTION_META[activeSection] ?? SECTION_META.dashboard;
+
+  if (showOnboarding) {
+    return <OnboardingModal onComplete={setUserName} />;
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -219,25 +230,27 @@ function AppContent() {
                   )}
                 </div>
 
-                <section>
-                  <h2 className="sr-only">Portfolio samenvatting</h2>
-                  <Dashboard assets={filteredAssets} isLoading={isLoading} />
-                </section>
+                <>
+                  <section>
+                    <h2 className="sr-only">Portfolio samenvatting</h2>
+                    <Dashboard assets={filteredAssets} isLoading={isLoading} />
+                  </section>
 
-                <section>
-                  <h2 className="text-base font-semibold tracking-tight mb-4">
-                    Mijn assets
-                  </h2>
-                  <AssetsList
-                    assets={filteredAssets}
-                    isLoading={isLoading}
-                    terMap={terMap}
-                    updateTer={updateTer}
-                    ongoingCostsMap={ongoingCostsMap}
-                    updateOngoingCosts={updateOngoingCosts}
-                    commodityTickers={commodityTickers}
-                  />
-                </section>
+                  <section>
+                    <h2 className="text-base font-semibold tracking-tight mb-4">
+                      Mijn assets
+                    </h2>
+                    <AssetsList
+                      assets={filteredAssets}
+                      isLoading={isLoading}
+                      terMap={terMap}
+                      updateTer={updateTer}
+                      ongoingCostsMap={ongoingCostsMap}
+                      updateOngoingCosts={updateOngoingCosts}
+                      commodityTickers={commodityTickers}
+                    />
+                  </section>
+                </>
               </>
             )}
           </div>

@@ -28,6 +28,9 @@ interface AppContextValue {
   activeSection: Section;
   setActiveSection: (s: Section) => void;
 
+  // Actor readiness
+  isActorReady: boolean;
+
   // Data
   assets: AssetView[];
   loans: LoanView[];
@@ -57,7 +60,7 @@ interface AppContextValue {
 
   // User profile
   userName: string;
-  setUserName: (name: string) => void;
+  setUserName: (name: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -65,6 +68,7 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
   const [userName, setUserNameState] = useState<string>("");
+  const [isActorReady, setIsActorReady] = useState(false);
 
   const { data: assets = [], isLoading, refetch, isFetching } = useAllAssets();
   const { data: loans = [] } = useAllLoans();
@@ -73,7 +77,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     useCommodities();
   const { twelveDataApiKey, setTwelveDataApiKey } = useSettings();
   const { refreshPrices } = usePriceRefresh();
-  const { actor } = useActor();
+  const { actor, isFetching: isActorFetching } = useActor();
+
+  // Actor is ready as soon as it exists — no extra backend call needed
+  useEffect(() => {
+    if (actor && !isActorFetching) {
+      setIsActorReady(true);
+    }
+  }, [actor, isActorFetching]);
 
   // Load user name on mount / when actor becomes available
   useEffect(() => {
@@ -90,10 +101,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const setUserName = useCallback(
     async (name: string) => {
+      if (!actor) throw new Error("Niet verbonden met backend");
+      await actor.setUserName(name);
       setUserNameState(name);
-      if (actor) {
-        await actor.setUserName(name);
-      }
     },
     [actor],
   );
@@ -122,6 +132,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         activeSection,
         setActiveSection,
+        isActorReady,
         assets,
         loans,
         isLoading,

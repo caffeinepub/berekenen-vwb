@@ -258,8 +258,17 @@ export function AddAssetDialog({
       });
       clearSearch();
       setOpen(false);
-    } catch {
-      toast.error("Fout bij het toevoegen van asset");
+    } catch (err) {
+      const msg = String(err);
+      if (
+        msg.includes("Unauthorized") ||
+        msg.includes("not registered") ||
+        msg.includes("Only users")
+      ) {
+        toast.error("Sessie verlopen. Ververs de pagina en probeer opnieuw.");
+      } else {
+        toast.error("Fout bij het toevoegen van asset");
+      }
     }
   };
 

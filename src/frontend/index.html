@@ -3,6 +3,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PortfolioFlow</title>
+    <!-- Apply saved theme before React mounts to prevent flash -->
+    <script>
+      (function() {
+        try {
+          var theme = localStorage.getItem('portfolioflow-theme') || 'dark';
+          var root = document.documentElement;
+          root.classList.remove('dark', 'light', 'theme-midnight', 'theme-forest', 'theme-ocean');
+          if (theme === 'dark') {
+            root.classList.add('dark');
+          } else if (theme === 'midnight') {
+            root.classList.add('dark', 'theme-midnight');
+          } else if (theme === 'forest') {
+            root.classList.add('dark', 'theme-forest');
+          } else if (theme === 'ocean') {
+            root.classList.add('dark', 'theme-ocean');
+          }
+          // 'light' needs no class
+        } catch(e) {
+          // Fallback: apply dark mode
+          document.documentElement.classList.add('dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

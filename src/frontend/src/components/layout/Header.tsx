@@ -17,10 +17,7 @@ export function Header() {
           </div>
           <div>
             <span className="font-semibold text-sm tracking-tight">
-              Berekenen
-            </span>
-            <span className="text-xs text-muted-foreground ml-1.5 font-mono">
-              VWB
+              PortfolioFlow
             </span>
           </div>
         </div>
