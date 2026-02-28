@@ -80,6 +80,12 @@ export const StakingRewardView = IDL.Record({
   'date' : Time,
   'quantity' : IDL.Float64,
 });
+export const UserSettingsView = IDL.Record({
+  'terEntries' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64)),
+  'twelveDataApiKey' : IDL.Text,
+  'commodityTickers' : IDL.Vec(IDL.Text),
+  'ongoingCostsEntries' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Bool)),
+});
 
 export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
@@ -136,8 +142,10 @@ export const idlService = IDL.Service({
       [IDL.Opt(UserProfile)],
       ['query'],
     ),
+  'getUserSettings' : IDL.Func([], [UserSettingsView], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'saveUserSettings' : IDL.Func([UserSettingsView], [], []),
   'setUserName' : IDL.Func([IDL.Text], [], []),
   'updateAsset' : IDL.Func(
       [IDL.Text, IDL.Text, AssetType, IDL.Float64],
@@ -234,6 +242,12 @@ export const idlFactory = ({ IDL }) => {
     'date' : Time,
     'quantity' : IDL.Float64,
   });
+  const UserSettingsView = IDL.Record({
+    'terEntries' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Float64)),
+    'twelveDataApiKey' : IDL.Text,
+    'commodityTickers' : IDL.Vec(IDL.Text),
+    'ongoingCostsEntries' : IDL.Vec(IDL.Tuple(IDL.Text, IDL.Bool)),
+  });
   
   return IDL.Service({
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
@@ -290,8 +304,10 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Opt(UserProfile)],
         ['query'],
       ),
+    'getUserSettings' : IDL.Func([], [UserSettingsView], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'saveUserSettings' : IDL.Func([UserSettingsView], [], []),
     'setUserName' : IDL.Func([IDL.Text], [], []),
     'updateAsset' : IDL.Func(
         [IDL.Text, IDL.Text, AssetType, IDL.Float64],

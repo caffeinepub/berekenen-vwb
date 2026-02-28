@@ -66,6 +66,12 @@ export interface UserProfile { 'name' : string }
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export interface UserSettingsView {
+  'terEntries' : Array<[string, number]>,
+  'twelveDataApiKey' : string,
+  'commodityTickers' : Array<string>,
+  'ongoingCostsEntries' : Array<[string, boolean]>,
+}
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addAsset' : ActorMethod<[string, string, AssetType, number], undefined>,
@@ -103,8 +109,10 @@ export interface _SERVICE {
   'getTransactions' : ActorMethod<[string], Array<TransactionView>>,
   'getUserName' : ActorMethod<[], string>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
+  'getUserSettings' : ActorMethod<[], UserSettingsView>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'saveUserSettings' : ActorMethod<[UserSettingsView], undefined>,
   'setUserName' : ActorMethod<[string], undefined>,
   'updateAsset' : ActorMethod<[string, string, AssetType, number], undefined>,
   'updateLoan' : ActorMethod<

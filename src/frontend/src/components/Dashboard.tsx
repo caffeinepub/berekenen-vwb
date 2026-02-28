@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import {
   Award,
   BarChart3,
+  Receipt,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -15,6 +16,10 @@ import { MoneyValue, ReturnValue } from "./MoneyValue";
 interface DashboardProps {
   assets: AssetView[];
   isLoading: boolean;
+  /** When provided, a "Totale transactiekosten" card is shown */
+  totalTransactionCosts?: number;
+  /** When provided (stocks only), a "Totale lopende kosten" card is shown */
+  totalOngoingCosts?: number;
 }
 
 function computeSummary(assets: AssetView[]): PortfolioSummary {
@@ -63,13 +68,13 @@ function SummaryCard({
   return (
     <div
       className={cn(
-        "bg-card border border-border rounded-lg p-5 flex flex-col gap-3 opacity-0 animate-fade-in-up",
+        "bg-card border border-border rounded-lg p-4 flex flex-col gap-2 opacity-0 animate-fade-in-up",
         className,
       )}
       style={{ animationDelay: `${delay}ms`, animationFillMode: "forwards" }}
     >
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        <span className="text-xs font-medium uppercase tracking-widest text-muted-foreground leading-tight">
           {label}
         </span>
         <span className="text-muted-foreground/50">{icon}</span>
@@ -79,14 +84,33 @@ function SummaryCard({
   );
 }
 
-export function Dashboard({ assets, isLoading }: DashboardProps) {
+export function Dashboard({
+  assets,
+  isLoading,
+  totalTransactionCosts,
+  totalOngoingCosts,
+}: DashboardProps) {
+  const showTxCosts =
+    totalTransactionCosts !== undefined && totalTransactionCosts > 0;
+  const showOngoingCosts =
+    totalOngoingCosts !== undefined && totalOngoingCosts > 0;
+
+  // How many extra cost cards will be shown
+  const extraCards = (showTxCosts ? 1 : 0) + (showOngoingCosts ? 1 : 0);
+  const totalCards = 5 + extraCards;
+
+  // Fixed responsive grid: max 4 columns on large screens, responsive on smaller
+  const gridClass =
+    "grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3";
+
   if (isLoading) {
     return (
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        {["inv", "cur", "real", "unreal", "total"].map((key) => (
+      <div className={gridClass}>
+        {Array.from({ length: totalCards }).map((_, i) => (
           <div
-            key={key}
-            className="bg-card border border-border rounded-lg p-5 flex flex-col gap-3"
+            // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders
+            key={i}
+            className="bg-card border border-border rounded-lg p-4 flex flex-col gap-2"
           >
             <Skeleton className="h-3 w-24" />
             <Skeleton className="h-6 w-32" />
@@ -101,7 +125,7 @@ export function Dashboard({ assets, isLoading }: DashboardProps) {
   const returnIsNegative = summary.totalReturn < -0.005;
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+    <div className={gridClass}>
       <SummaryCard
         label="Inleg"
         icon={<Wallet className="w-4 h-4" />}
@@ -183,6 +207,30 @@ export function Dashboard({ assets, isLoading }: DashboardProps) {
           returnIsNegative && "border-loss/30",
         )}
       />
+      {showTxCosts && (
+        <SummaryCard
+          label="Totale transactiekosten"
+          icon={<Receipt className="w-4 h-4" />}
+          value={
+            <span className="text-xl font-semibold text-loss">
+              -{formatEuro(totalTransactionCosts!)}
+            </span>
+          }
+          delay={250}
+        />
+      )}
+      {showOngoingCosts && (
+        <SummaryCard
+          label="Totale lopende kosten"
+          icon={<Receipt className="w-4 h-4" />}
+          value={
+            <span className="text-xl font-semibold text-loss">
+              -{formatEuro(totalOngoingCosts!)}
+            </span>
+          }
+          delay={300}
+        />
+      )}
     </div>
   );
 }

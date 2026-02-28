@@ -210,7 +210,7 @@ export function AssetsList({
             }}
           >
             {/* Asset header row */}
-            <div className="p-4 md:p-5">
+            <div className="p-3 md:p-4">
               <div className="flex flex-col gap-4">
                 {/* Top row: name + actions */}
                 <div className="flex items-start justify-between gap-3">
@@ -267,88 +267,112 @@ export function AssetsList({
                 </div>
 
                 {/* Metrics grid */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                  <MetricCell
-                    label="Stuks in bezit"
-                    value={
-                      <span className="num font-medium">
-                        {formatQuantity(fifo.currentQuantity, isCrypto)}
-                      </span>
-                    }
-                  />
-                  <MetricCell
-                    label="Inleg"
-                    value={
-                      <MoneyValue
-                        amount={fifo.netInvested}
-                        className="font-medium"
-                      />
-                    }
-                  />
-                  <MetricCell
-                    label="Actuele waarde"
-                    value={
-                      <MoneyValue
-                        amount={currentValue}
-                        className="font-medium"
-                      />
-                    }
-                  />
-                  <MetricCell
-                    label="Ongerealiseerd"
-                    value={
-                      <ReturnValue
-                        amount={fifo.unrealized}
-                        percentage={
-                          fifo.netInvested > 0
-                            ? (fifo.unrealized / fifo.netInvested) * 100
-                            : undefined
-                        }
-                        className="font-medium"
-                      />
-                    }
-                  />
-                  <MetricCell
-                    label="Gerealiseerd"
-                    value={
-                      <ReturnValue
-                        amount={fifo.realized}
-                        className="font-medium"
-                      />
-                    }
-                  />
-                  <MetricCell
-                    label="Huidige prijs"
-                    value={
-                      <span className="num text-muted-foreground">
-                        {formatEuro(asset.currentPrice, 4)}
-                      </span>
-                    }
-                  />
-                  {totalTxFees > 0 && (
-                    <MetricCell
-                      label="Totale transactiekosten"
-                      value={
-                        <span className="num font-medium text-loss">
-                          -{formatEuro(totalTxFees)}
-                        </span>
-                      }
-                    />
-                  )}
-                  {isStock &&
-                    !isCommodityAsset &&
-                    hasTer &&
-                    totalTerCosts > 0 && (
+                {(() => {
+                  const grossReturn = fifo.realized + fifo.unrealized;
+                  const netReturn = grossReturn - totalTxFees;
+                  const netReturnPct =
+                    fifo.netInvested > 0
+                      ? (netReturn / fifo.netInvested) * 100
+                      : undefined;
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-3 min-w-0">
                       <MetricCell
-                        label="Lopende kosten (TER)"
+                        label="Stuks in bezit"
                         value={
-                          <span className="num font-medium text-loss">
-                            -{formatEuro(totalTerCosts)}
+                          <span className="num font-medium">
+                            {formatQuantity(fifo.currentQuantity, isCrypto)}
                           </span>
                         }
                       />
-                    )}
-                </div>
+                      <MetricCell
+                        label="Inleg"
+                        value={
+                          <MoneyValue
+                            amount={fifo.netInvested}
+                            className="font-medium"
+                          />
+                        }
+                      />
+                      <MetricCell
+                        label="Actuele waarde"
+                        value={
+                          <MoneyValue
+                            amount={currentValue}
+                            className="font-medium"
+                          />
+                        }
+                      />
+                      <MetricCell
+                        label="Ongerealiseerd"
+                        value={
+                          <ReturnValue
+                            amount={fifo.unrealized}
+                            percentage={
+                              fifo.netInvested > 0
+                                ? (fifo.unrealized / fifo.netInvested) * 100
+                                : undefined
+                            }
+                            className="font-medium"
+                          />
+                        }
+                      />
+                      <MetricCell
+                        label="Gerealiseerd"
+                        value={
+                          <ReturnValue
+                            amount={fifo.realized}
+                            className="font-medium"
+                          />
+                        }
+                      />
+                      <MetricCell
+                        label="Huidige prijs"
+                        value={
+                          <span className="num text-muted-foreground">
+                            {formatEuro(asset.currentPrice, 4)}
+                          </span>
+                        }
+                      />
+                      <MetricCell
+                        label="Totale transactiekosten"
+                        value={
+                          totalTxFees > 0 ? (
+                            <span className="num font-medium text-loss">
+                              -{formatEuro(totalTxFees)}
+                            </span>
+                          ) : (
+                            <span className="num font-medium text-muted-foreground">
+                              {formatEuro(0)}
+                            </span>
+                          )
+                        }
+                      />
+                      <MetricCell
+                        label="Totaal rendement"
+                        value={
+                          <ReturnValue
+                            amount={netReturn}
+                            percentage={netReturnPct}
+                            className="font-medium"
+                          />
+                        }
+                      />
+                      {isStock &&
+                        !isCommodityAsset &&
+                        hasTer &&
+                        totalTerCosts > 0 && (
+                          <MetricCell
+                            label="Totaal (huidige) lopende kosten"
+                            value={
+                              <span className="num font-medium text-loss">
+                                -{formatEuro(totalTerCosts)}
+                              </span>
+                            }
+                          />
+                        )}
+                    </div>
+                  );
+                })()}
 
                 {/* TER field — stocks (not commodities) with ongoing costs enabled only */}
                 {isStock &&
@@ -427,7 +451,7 @@ export function AssetsList({
             {/* Transaction history */}
             {asset.transactions.length > 0 && (
               <div
-                className={cn("px-4 md:px-5 pb-4 border-t border-border/50")}
+                className={cn("px-3 md:px-4 pb-3 border-t border-border/50")}
               >
                 <TransactionHistory
                   asset={asset}
@@ -453,11 +477,13 @@ interface MetricCellProps {
 
 function MetricCell({ label, value }: MetricCellProps) {
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">
+    <div className="flex flex-col gap-0.5 min-w-0">
+      <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium leading-tight truncate">
         {label}
       </span>
-      <div className="text-sm">{value}</div>
+      <div className="text-sm font-semibold leading-snug min-w-0 break-words">
+        {value}
+      </div>
     </div>
   );
 }

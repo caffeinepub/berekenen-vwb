@@ -213,7 +213,8 @@ export function computeYearStats(
   const totalLoanInterest = computeLoanInterestForYear(loans, year);
   realizedPnL += totalLoanInterest;
 
-  const netReturn = realizedPnL + unrealizedPnL - txTerCosts;
+  // Transactiekosten worden afgetrokken van bruto rendement; TER (lopende kosten) niet.
+  const netReturn = realizedPnL + unrealizedPnL - totalFees;
   const netReturnPct =
     allTimeInvested > 0 ? (netReturn / allTimeInvested) * 100 : 0;
 

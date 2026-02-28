@@ -8,11 +8,9 @@ import {
 } from "react";
 import { AssetType, type AssetView, type LoanView } from "../backend.d";
 import { useActor } from "../hooks/useActor";
-import { useCommodities } from "../hooks/useCommodities";
 import { usePriceRefresh } from "../hooks/usePriceRefresh";
 import { useAllAssets, useAllLoans } from "../hooks/useQueries";
-import { useSettings } from "../hooks/useSettings";
-import { useTer } from "../hooks/useTer";
+import { useUserSettings } from "../hooks/useUserSettings";
 
 export type Section =
   | "dashboard"
@@ -72,21 +70,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const { data: assets = [], isLoading, refetch, isFetching } = useAllAssets();
   const { data: loans = [] } = useAllLoans();
-  const { terMap, updateTer, ongoingCostsMap, updateOngoingCosts } = useTer();
-  const { commodityTickers, addCommodityTicker, removeCommodityTicker } =
-    useCommodities();
-  const { twelveDataApiKey, setTwelveDataApiKey } = useSettings();
   const { refreshPrices } = usePriceRefresh();
   const { actor, isFetching: isActorFetching } = useActor();
 
-  // Actor is ready as soon as it exists — no extra backend call needed
+  // ─── User settings — now backed by the canister ──────────────────────────
+  const {
+    terMap,
+    ongoingCostsMap,
+    commodityTickers: commodityTickersArray,
+    twelveDataApiKey,
+    updateTerMap,
+    updateOngoingCostsMap,
+    updateCommodityTickers,
+    updateTwelveDataApiKey,
+  } = useUserSettings();
+
+  // Convert array → Set for downstream consumers
+  const commodityTickers = new Set(
+    commodityTickersArray.map((t) => t.toUpperCase()),
+  );
+
+  // ─── Actor readiness ───────────────────────────────────────────────────────
   useEffect(() => {
     if (actor && !isActorFetching) {
       setIsActorReady(true);
     }
   }, [actor, isActorFetching]);
 
-  // Load user name on mount / when actor becomes available
+  // ─── User name ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!actor) return;
     actor
@@ -108,6 +119,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [actor],
   );
 
+  // ─── Filtered assets per section ──────────────────────────────────────────
   const stockAssets = assets.filter(
     (a) => a.assetType === AssetType.stock && !commodityTickers.has(a.ticker),
   );
@@ -116,8 +128,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (a) => a.assetType === AssetType.stock && commodityTickers.has(a.ticker),
   );
 
-  // Auto-refresh prices when switching tabs — intentionally omit asset/fn deps
-  // so prices are fetched once per tab switch, not on every render.
+  // ─── Wrapped update functions (matching original API surface) ─────────────
+  const updateTer = useCallback(
+    (ticker: string, pct: number | null) => updateTerMap(ticker, pct),
+    [updateTerMap],
+  );
+
+  const updateOngoingCosts = useCallback(
+    (ticker: string, enabled: boolean) =>
+      updateOngoingCostsMap(ticker, enabled),
+    [updateOngoingCostsMap],
+  );
+
+  const addCommodityTicker = useCallback(
+    (ticker: string) => {
+      const upper = ticker.toUpperCase();
+      const next = Array.from(new Set([...commodityTickersArray, upper]));
+      updateCommodityTickers(next);
+    },
+    [commodityTickersArray, updateCommodityTickers],
+  );
+
+  const removeCommodityTicker = useCallback(
+    (ticker: string) => {
+      const upper = ticker.toUpperCase();
+      const next = commodityTickersArray.filter((t) => t !== upper);
+      updateCommodityTickers(next);
+    },
+    [commodityTickersArray, updateCommodityTickers],
+  );
+
+  const setTwelveDataApiKey = useCallback(
+    (key: string) => updateTwelveDataApiKey(key),
+    [updateTwelveDataApiKey],
+  );
+
+  // ─── Auto-refresh prices on tab switch ────────────────────────────────────
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional tab-switch trigger only
   useEffect(() => {
     if (activeSection === "stocks" && stockAssets.length > 0) {

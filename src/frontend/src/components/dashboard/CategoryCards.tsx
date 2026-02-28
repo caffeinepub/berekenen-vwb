@@ -98,23 +98,23 @@ function CategoryCard({
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <div className="text-xs text-muted-foreground mb-0.5">
+        <div className="min-w-0">
+          <div className="text-xs text-muted-foreground mb-0.5 truncate">
             {investedLabel}
           </div>
-          <div className="text-sm font-medium num">{invested}</div>
+          <div className="text-sm font-medium num truncate">{invested}</div>
         </div>
-        <div>
-          <div className="text-xs text-muted-foreground mb-0.5">
+        <div className="min-w-0">
+          <div className="text-xs text-muted-foreground mb-0.5 truncate">
             {currentValueLabel}
           </div>
-          <div className="text-sm font-medium num">{currentValue}</div>
+          <div className="text-sm font-medium num truncate">{currentValue}</div>
         </div>
       </div>
 
       <div
         className={cn(
-          "flex items-center justify-between rounded-lg px-3 py-2",
+          "rounded-lg px-3 py-2",
           isPositive
             ? "bg-gain-muted"
             : isNegative
@@ -122,18 +122,20 @@ function CategoryCard({
               : "bg-muted/50",
         )}
       >
-        <span className="text-xs text-muted-foreground">Rendement</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-muted-foreground">Rendement</span>
           {isPositive ? (
-            <ArrowUpRight className="w-3.5 h-3.5 text-gain" />
+            <ArrowUpRight className="w-3.5 h-3.5 text-gain flex-shrink-0" />
           ) : isNegative ? (
-            <ArrowDownRight className="w-3.5 h-3.5 text-loss" />
+            <ArrowDownRight className="w-3.5 h-3.5 text-loss flex-shrink-0" />
           ) : (
-            <Minus className="w-3.5 h-3.5 text-muted-foreground" />
+            <Minus className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
           )}
+        </div>
+        <div className="flex items-baseline justify-between gap-1 flex-wrap">
           <span
             className={cn(
-              "text-sm font-semibold num",
+              "text-sm font-semibold num truncate",
               isPositive
                 ? "text-gain"
                 : isNegative
@@ -145,7 +147,7 @@ function CategoryCard({
           </span>
           <span
             className={cn(
-              "text-xs num",
+              "text-xs num flex-shrink-0",
               isPositive
                 ? "text-gain"
                 : isNegative

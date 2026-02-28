@@ -191,16 +191,6 @@ export function YearOverview({
           }
         />
         <StatCard
-          label="Transactiekosten"
-          icon={<Receipt className="w-4 h-4" />}
-          value={
-            <MoneyValue
-              amount={stats.totalFees}
-              className="text-lg font-semibold"
-            />
-          }
-        />
-        <StatCard
           label="Gerealiseerd"
           icon={<TrendingUp className="w-4 h-4" />}
           value={
@@ -256,17 +246,22 @@ export function YearOverview({
             }
           />
         )}
-        {hasTxTerCosts && (
-          <StatCard
-            label="Lopende kosten (ETF) – totaal huidige waarde"
-            icon={<Percent className="w-4 h-4" />}
-            value={
+        <StatCard
+          label="Transactiekosten"
+          icon={<Receipt className="w-4 h-4" />}
+          value={
+            stats.totalFees > 0 ? (
               <span className="num text-lg font-semibold text-loss">
-                -{formatEuro(stats.txTerCosts)}
+                -{formatEuro(stats.totalFees)}
               </span>
-            }
-          />
-        )}
+            ) : (
+              <MoneyValue
+                amount={stats.totalFees}
+                className="text-lg font-semibold"
+              />
+            )
+          }
+        />
         <StatCard
           label="Netto rendement"
           icon={
@@ -303,6 +298,17 @@ export function YearOverview({
             returnIsNegative && "border-loss/30",
           )}
         />
+        {hasTxTerCosts && (
+          <StatCard
+            label="Lopende kosten (ETF)"
+            icon={<Percent className="w-4 h-4" />}
+            value={
+              <span className="num text-lg font-semibold text-loss">
+                -{formatEuro(stats.txTerCosts)}
+              </span>
+            }
+          />
+        )}
       </div>
 
       {yearTxs.length === 0 ? (

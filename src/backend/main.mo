@@ -8,12 +8,13 @@ import Float "mo:core/Float";
 import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
-
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
+
 // Specify the data migration function in with-clause
- actor {
+
+actor {
   // Public type definitions
   type AssetType = {
     #stock;
@@ -36,6 +37,14 @@ import AccessControl "authorization/access-control";
     #active;
     #repaid;
     #defaulted;
+  };
+
+  // NEW PUBLIC TYPE FOR USER SETTINGS
+  public type UserSettingsView = {
+    commodityTickers : [Text];
+    terEntries : [(Text, Float)];
+    ongoingCostsEntries : [(Text, Bool)];
+    twelveDataApiKey : Text;
   };
 
   public type AssetView = {
@@ -147,6 +156,7 @@ import AccessControl "authorization/access-control";
     transactions : List.List<LoanTransaction>;
   };
 
+  // EXTENDED USER DATA TYPE WITH NEW FIELDS
   type UserData = {
     assets : Map.Map<Text, Asset>;
     stakingRewards : Map.Map<Text, List.List<StakingReward>>;
@@ -155,6 +165,10 @@ import AccessControl "authorization/access-control";
     userName : Text;
     nextLoanId : Nat;
     nextLoanTxId : Nat;
+    commodityTickers : List.List<Text>;
+    terEntries : Map.Map<Text, Float>;
+    ongoingCostsEntries : Map.Map<Text, Bool>;
+    twelveDataApiKey : Text;
   };
 
   // Initialize the user system state
@@ -179,6 +193,10 @@ import AccessControl "authorization/access-control";
           userName = "";
           nextLoanId = 0;
           nextLoanTxId = 0;
+          commodityTickers = List.empty<Text>();
+          terEntries = Map.empty<Text, Float>();
+          ongoingCostsEntries = Map.empty<Text, Bool>();
+          twelveDataApiKey = "";
         };
         userData.add(principal, newUserData);
         newUserData;
@@ -254,6 +272,16 @@ import AccessControl "authorization/access-control";
     };
   };
 
+  // NEW: Conversion functions for user settings
+  func toUserSettingsView(userData : UserData) : UserSettingsView {
+    {
+      commodityTickers = userData.commodityTickers.toArray();
+      terEntries = userData.terEntries.entries().toArray();
+      ongoingCostsEntries = userData.ongoingCostsEntries.entries().toArray();
+      twelveDataApiKey = userData.twelveDataApiKey;
+    };
+  };
+
   // User profile management functions
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
@@ -276,7 +304,47 @@ import AccessControl "authorization/access-control";
     userProfiles.add(caller, profile);
   };
 
-  // Asset management functions
+  // NEW: User settings management functions
+  public query ({ caller }) func getUserSettings() : async UserSettingsView {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get settings");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+    toUserSettingsView(callerData);
+  };
+
+  public shared ({ caller }) func saveUserSettings(settings : UserSettingsView) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can save settings");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    let commodityTickersList = List.fromArray(settings.commodityTickers);
+
+    let terEntriesMap = Map.empty<Text, Float>();
+    for ((key, value) in settings.terEntries.values()) {
+      terEntriesMap.add(key, value);
+    };
+
+    let ongoingCostsEntriesMap = Map.empty<Text, Bool>();
+    for ((key, value) in settings.ongoingCostsEntries.values()) {
+      ongoingCostsEntriesMap.add(key, value);
+    };
+
+    let updatedCallerData = {
+      callerData with
+      commodityTickers = commodityTickersList;
+      terEntries = terEntriesMap;
+      ongoingCostsEntries = ongoingCostsEntriesMap;
+      twelveDataApiKey = settings.twelveDataApiKey;
+    };
+
+    userData.add(caller, updatedCallerData);
+  };
+
+  // Asset management functions (unchanged)
   public shared ({ caller }) func addAsset(name : Text, ticker : Text, assetType : AssetType, currentPrice : Float) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can add assets");

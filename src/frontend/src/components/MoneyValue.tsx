@@ -50,11 +50,17 @@ export function ReturnValue({
 
   return (
     <span
-      className={cn("num flex items-baseline gap-1.5", colorClass, className)}
+      className={cn(
+        "num flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5",
+        colorClass,
+        className,
+      )}
     >
-      <span>{formatEuroSigned(amount)}</span>
+      <span className="shrink-0">{formatEuroSigned(amount)}</span>
       {percentage !== undefined && (
-        <span className="text-xs opacity-75">{formatPercent(percentage)}</span>
+        <span className="text-xs opacity-75 shrink-0">
+          {formatPercent(percentage)}
+        </span>
       )}
     </span>
   );

@@ -52,11 +52,11 @@ export async function exportXlsx(
     ...(stats.totalStaking > 0
       ? [["Ontvangen staking", stats.totalStaking]]
       : []),
+    ["Netto rendement", stats.netReturn],
+    ["Rendement %", stats.netReturnPct / 100],
     ...(stats.txTerCosts > 0
       ? [["Lopende kosten (ETF) – totaal huidige waarde", -stats.txTerCosts]]
       : []),
-    ["Netto rendement", stats.netReturn],
-    ["Rendement %", stats.netReturnPct / 100],
   ];
 
   const summarySheet = XLSX.utils.aoa_to_sheet(summaryData);
@@ -184,6 +184,8 @@ export async function exportPdf(
     ...(stats.totalStaking > 0
       ? [["Ontvangen staking", formatEuro(stats.totalStaking)]]
       : []),
+    ["Netto rendement", formatEuro(stats.netReturn)],
+    ["Rendement %", formatPercent(stats.netReturnPct)],
     ...(stats.txTerCosts > 0
       ? [
           [
@@ -192,8 +194,6 @@ export async function exportPdf(
           ],
         ]
       : []),
-    ["Netto rendement", formatEuro(stats.netReturn)],
-    ["Rendement %", formatPercent(stats.netReturnPct)],
   ];
 
   autoTable(doc, {

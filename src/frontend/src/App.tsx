@@ -10,6 +10,8 @@ import {
   Settings,
   TrendingUp,
 } from "lucide-react";
+import { useMemo } from "react";
+import { AssetType } from "./backend.d";
 import { AddAssetDialog } from "./components/AddAssetDialog";
 import { AddCommodityAssetDialog } from "./components/AddCommodityAssetDialog";
 import { AssetsList } from "./components/AssetsList";
@@ -25,6 +27,7 @@ import { MobileNav } from "./components/layout/MobileNav";
 import { Sidebar } from "./components/layout/Sidebar";
 import { AppProvider, useAppContext } from "./context/AppContext";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
+import { calculateFifo } from "./utils/fifo";
 
 function AppContent() {
   const {
@@ -58,6 +61,42 @@ function AppContent() {
         : activeSection === "commodities"
           ? commodityAssets
           : assets;
+
+  // Compute total transaction costs for the current tab's assets
+  const totalTransactionCosts = useMemo(() => {
+    const list =
+      activeSection === "stocks"
+        ? stockAssets
+        : activeSection === "crypto"
+          ? cryptoAssets
+          : activeSection === "commodities"
+            ? commodityAssets
+            : [];
+    return list.reduce(
+      (sum, a) => sum + a.transactions.reduce((s, tx) => s + (tx.fees ?? 0), 0),
+      0,
+    );
+  }, [activeSection, stockAssets, cryptoAssets, commodityAssets]);
+
+  // Compute total ongoing costs (TER) for stocks only — based on current value
+  const totalOngoingCosts = useMemo(() => {
+    if (activeSection !== "stocks") return 0;
+    return stockAssets.reduce((sum, a) => {
+      const isCommodityAsset = commodityTickers.has(a.ticker);
+      const isStock = a.assetType === AssetType.stock;
+      const hasOngoing = !!(
+        ongoingCostsMap[a.ticker] &&
+        !isCommodityAsset &&
+        isStock
+      );
+      if (!hasOngoing) return sum;
+      const terValue = terMap[a.ticker];
+      if (!terValue || terValue <= 0) return sum;
+      const fifo = calculateFifo(a.transactions, a.currentPrice);
+      const currentValue = fifo.currentQuantity * a.currentPrice;
+      return sum + currentValue * (terValue / 100);
+    }, 0);
+  }, [activeSection, stockAssets, terMap, ongoingCostsMap, commodityTickers]);
 
   const SECTION_META: Record<
     string,
@@ -233,7 +272,22 @@ function AppContent() {
                 <>
                   <section>
                     <h2 className="sr-only">Portfolio samenvatting</h2>
-                    <Dashboard assets={filteredAssets} isLoading={isLoading} />
+                    <Dashboard
+                      assets={filteredAssets}
+                      isLoading={isLoading}
+                      totalTransactionCosts={
+                        activeSection === "stocks" ||
+                        activeSection === "crypto" ||
+                        activeSection === "commodities"
+                          ? totalTransactionCosts
+                          : undefined
+                      }
+                      totalOngoingCosts={
+                        activeSection === "stocks"
+                          ? totalOngoingCosts
+                          : undefined
+                      }
+                    />
                   </section>
 
                   <section>

@@ -89,6 +89,26 @@ export class ExternalBlob {
         return this;
     }
 }
+export type Time = bigint;
+export interface AssetHistoryView {
+    timestamp: Time;
+    price: number;
+}
+export interface StakingRewardView {
+    date: Time;
+    quantity: number;
+}
+export interface TransactionView {
+    euroValue?: number;
+    transactionType: TransactionType;
+    asset: string;
+    date: Time;
+    fees?: number;
+    pricePerUnit: number;
+    hasOngoingCosts?: boolean;
+    notes?: string;
+    quantity: number;
+}
 export interface AssetView {
     currentPrice: number;
     ticker: string;
@@ -104,14 +124,11 @@ export interface LoanTransactionView {
     notes?: string;
     amount: number;
 }
-export type Time = bigint;
-export interface AssetHistoryView {
-    timestamp: Time;
-    price: number;
-}
-export interface StakingRewardView {
-    date: Time;
-    quantity: number;
+export interface UserSettingsView {
+    terEntries: Array<[string, number]>;
+    twelveDataApiKey: string;
+    commodityTickers: Array<string>;
+    ongoingCostsEntries: Array<[string, boolean]>;
 }
 export interface LoanView {
     id: bigint;
@@ -127,17 +144,6 @@ export interface LoanView {
 }
 export interface UserProfile {
     name: string;
-}
-export interface TransactionView {
-    euroValue?: number;
-    transactionType: TransactionType;
-    asset: string;
-    date: Time;
-    fees?: number;
-    pricePerUnit: number;
-    hasOngoingCosts?: boolean;
-    notes?: string;
-    quantity: number;
 }
 export enum AssetType {
     stock = "stock",
@@ -186,8 +192,10 @@ export interface backendInterface {
     getTransactions(asset: string): Promise<Array<TransactionView>>;
     getUserName(): Promise<string>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
+    getUserSettings(): Promise<UserSettingsView>;
     isCallerAdmin(): Promise<boolean>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    saveUserSettings(settings: UserSettingsView): Promise<void>;
     setUserName(name: string): Promise<void>;
     updateAsset(ticker: string, name: string, assetType: AssetType, currentPrice: number): Promise<void>;
     updateLoan(id: bigint, name: string, startDate: Time, loanedAmount: number, interestRatePercent: number | null, endDate: Time | null, durationMonths: bigint | null, notes: string | null, status: LoanStatus): Promise<void>;
@@ -504,6 +512,20 @@ export class Backend implements backendInterface {
             return from_candid_opt_n40(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getUserSettings(): Promise<UserSettingsView> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUserSettings();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUserSettings();
+            return result;
+        }
+    }
     async isCallerAdmin(): Promise<boolean> {
         if (this.processError) {
             try {
@@ -529,6 +551,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.saveCallerUserProfile(arg0);
+            return result;
+        }
+    }
+    async saveUserSettings(arg0: UserSettingsView): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.saveUserSettings(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.saveUserSettings(arg0);
             return result;
         }
     }

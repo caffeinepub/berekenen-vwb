@@ -13,12 +13,11 @@ import {
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useAppContext } from "../context/AppContext";
-import { useSettings } from "../hooks/useSettings";
 import { THEME_OPTIONS, useTheme } from "../hooks/useTheme";
 
 export function SettingsPage() {
-  const { twelveDataApiKey, setTwelveDataApiKey } = useSettings();
-  const { userName, setUserName } = useAppContext();
+  const { twelveDataApiKey, setTwelveDataApiKey, userName, setUserName } =
+    useAppContext();
   const { theme, setTheme } = useTheme();
 
   const [inputValue, setInputValue] = useState(twelveDataApiKey);
