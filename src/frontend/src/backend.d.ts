@@ -43,6 +43,9 @@ export interface LoanView {
     loanedAmount: number;
     startDate: Time;
 }
+export interface UserProfile {
+    name: string;
+}
 export interface TransactionView {
     euroValue?: number;
     transactionType: TransactionType;
@@ -73,6 +76,11 @@ export enum TransactionType {
     sell = "sell",
     stakingReward = "stakingReward"
 }
+export enum UserRole {
+    admin = "admin",
+    user = "user",
+    guest = "guest"
+}
 export interface backendInterface {
     addAsset(name: string, ticker: string, assetType: AssetType, currentPrice: number): Promise<void>;
     addHistoricalData(asset: string, timestamp: Time, price: number): Promise<void>;
@@ -80,6 +88,7 @@ export interface backendInterface {
     addLoanTransaction(loanId: bigint, transactionType: LoanTransactionType, date: Time, amount: number, notes: string | null): Promise<bigint>;
     addStakingReward(asset: string, date: Time, quantity: number): Promise<void>;
     addTransaction(transaction: TransactionView): Promise<void>;
+    assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     deleteAsset(ticker: string): Promise<void>;
     deleteLoan(id: bigint): Promise<void>;
     deleteLoanTransaction(loanId: bigint, txId: bigint): Promise<void>;
@@ -87,9 +96,16 @@ export interface backendInterface {
     getAllAssets(): Promise<Array<AssetView>>;
     getAllLoans(): Promise<Array<LoanView>>;
     getAsset(ticker: string): Promise<AssetView>;
+    getCallerUserProfile(): Promise<UserProfile | null>;
+    getCallerUserRole(): Promise<UserRole>;
     getHistoricalData(asset: string): Promise<Array<AssetHistoryView>>;
     getStakingRewards(asset: string): Promise<Array<StakingRewardView>>;
     getTransactions(asset: string): Promise<Array<TransactionView>>;
+    getUserName(): Promise<string>;
+    getUserProfile(user: Principal): Promise<UserProfile | null>;
+    isCallerAdmin(): Promise<boolean>;
+    saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    setUserName(name: string): Promise<void>;
     updateAsset(ticker: string, name: string, assetType: AssetType, currentPrice: number): Promise<void>;
     updateLoan(id: bigint, name: string, startDate: Time, loanedAmount: number, interestRatePercent: number | null, endDate: Time | null, durationMonths: bigint | null, notes: string | null, status: LoanStatus): Promise<void>;
     updateTransaction(ticker: string, index: bigint, transaction: TransactionView): Promise<void>;

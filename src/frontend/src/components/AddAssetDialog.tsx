@@ -1,28 +1,15 @@
-import { useState, useEffect, useRef } from "react";
-import { toast } from "sonner";
-import { AssetType } from "../backend.d";
-import { useAddAsset } from "../hooks/useQueries";
-import {
-  searchStocks,
-  fetchStockPrice,
-  searchCrypto,
-  fetchCryptoPrice,
-  StockSearchResult,
-  CryptoSearchResult,
-} from "../utils/api";
-import { setEtfFlag } from "../utils/ter";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -30,8 +17,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, Search, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AlertCircle, Loader2, Plus, Search } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { AssetType } from "../backend.d";
+import { useAddAsset } from "../hooks/useQueries";
+import {
+  type CryptoSearchResult,
+  type StockSearchResult,
+  fetchCryptoPrice,
+  fetchStockPrice,
+  searchCrypto,
+  searchStocks,
+} from "../utils/api";
+import { setEtfFlag } from "../utils/ter";
 
 // Internal form asset type: includes "etf" as a distinct UI option
 type FormAssetType = "stock" | "crypto" | "etf";
@@ -53,7 +53,8 @@ function getInitialAssetType(
   allowedAssetTypes?: Array<"stock" | "etf">,
 ): FormAssetType {
   if (forcedAssetType) return forcedAssetType;
-  if (allowedAssetTypes && allowedAssetTypes.length > 0) return allowedAssetTypes[0];
+  if (allowedAssetTypes && allowedAssetTypes.length > 0)
+    return allowedAssetTypes[0];
   return "stock";
 }
 
@@ -69,7 +70,10 @@ export function AddAssetDialog({
   const [form, setForm] = useState(() => ({
     name: "",
     ticker: "",
-    assetType: getInitialAssetType(forcedAssetType, allowedAssetTypes) as FormAssetType,
+    assetType: getInitialAssetType(
+      forcedAssetType,
+      allowedAssetTypes,
+    ) as FormAssetType,
     currentPrice: "",
     hasOngoingCosts: false,
     ter: "",
@@ -170,7 +174,12 @@ export function AddAssetDialog({
     if (apiKey.trim()) {
       setIsFetchingPrice(true);
       setPriceError(false);
-      const price = await fetchStockPrice(result.symbol, apiKey, result.currency, result.mic_code || result.exchange);
+      const price = await fetchStockPrice(
+        result.symbol,
+        apiKey,
+        result.currency,
+        result.mic_code || result.exchange,
+      );
       setIsFetchingPrice(false);
       if (price !== null) {
         setForm((p) => ({ ...p, currentPrice: String(price) }));
@@ -188,7 +197,10 @@ export function AddAssetDialog({
       ticker: result.symbol.toUpperCase(),
     }));
     // Store CoinGecko id for future price refreshes
-    localStorage.setItem(`vwb_coingecko_id_${result.symbol.toUpperCase()}`, result.id);
+    localStorage.setItem(
+      `vwb_coingecko_id_${result.symbol.toUpperCase()}`,
+      result.id,
+    );
     // Fetch price
     setIsFetchingPrice(true);
     setPriceError(false);
@@ -211,13 +223,14 @@ export function AddAssetDialog({
 
     try {
       const rawPrice = form.currentPrice.toString().trim().replace(",", ".");
-      const currentPrice = rawPrice !== "" ? parseFloat(rawPrice) : 0;
+      const currentPrice = rawPrice !== "" ? Number.parseFloat(rawPrice) : 0;
       const normalizedTicker = form.ticker.trim().toUpperCase();
       await addAsset.mutateAsync({
         name: form.name.trim(),
         ticker: normalizedTicker,
         assetType: backendAssetType(form.assetType),
-        currentPrice: isNaN(currentPrice) || currentPrice < 0 ? 0 : currentPrice,
+        currentPrice:
+          Number.isNaN(currentPrice) || currentPrice < 0 ? 0 : currentPrice,
       });
 
       // Persist ETF flag so the app remembers this is an ETF (not a regular stock)
@@ -227,8 +240,8 @@ export function AddAssetDialog({
         updateOngoingCosts(normalizedTicker, form.hasOngoingCosts);
       }
       if (form.hasOngoingCosts && form.ter && updateTer) {
-        const terPct = parseFloat(form.ter.replace(",", "."));
-        if (!isNaN(terPct) && terPct >= 0) {
+        const terPct = Number.parseFloat(form.ter.replace(",", "."));
+        if (!Number.isNaN(terPct) && terPct >= 0) {
           updateTer(normalizedTicker, terPct);
         }
       }
@@ -276,10 +289,11 @@ export function AddAssetDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-semibold">Nieuwe asset toevoegen</DialogTitle>
+          <DialogTitle className="font-semibold">
+            Nieuwe asset toevoegen
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
-
           {/* ── Search field ── */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="asset-search">
@@ -290,7 +304,10 @@ export function AddAssetDialog({
                 <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-500" />
                 <span>
                   Voer eerst je Twelve Data API-sleutel in via{" "}
-                  <span className="font-medium text-foreground">Instellingen</span> om te kunnen zoeken.
+                  <span className="font-medium text-foreground">
+                    Instellingen
+                  </span>{" "}
+                  om te kunnen zoeken.
                 </span>
               </div>
             ) : (
@@ -298,7 +315,9 @@ export function AddAssetDialog({
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                 <Input
                   id="asset-search"
-                  placeholder={isCrypto ? "bijv. Bitcoin of BTC…" : "bijv. ASML of Apple…"}
+                  placeholder={
+                    isCrypto ? "bijv. Bitcoin of BTC…" : "bijv. ASML of Apple…"
+                  }
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-8"
@@ -321,11 +340,15 @@ export function AddAssetDialog({
                         onClick={() => handleSelectCrypto(coin)}
                         className={cn(
                           "w-full text-left px-3 py-2 text-sm hover:bg-accent/60 transition-colors",
-                          "flex items-center gap-2 border-b border-border/50 last:border-0"
+                          "flex items-center gap-2 border-b border-border/50 last:border-0",
                         )}
                       >
                         {coin.thumb && (
-                          <img src={coin.thumb} alt="" className="w-5 h-5 rounded-full shrink-0" />
+                          <img
+                            src={coin.thumb}
+                            alt=""
+                            className="w-5 h-5 rounded-full shrink-0"
+                          />
                         )}
                         <span className="font-medium">{coin.name}</span>
                         <span className="text-muted-foreground text-xs">
@@ -345,13 +368,15 @@ export function AddAssetDialog({
                         onClick={() => handleSelectStock(stock)}
                         className={cn(
                           "w-full text-left px-3 py-2 text-sm hover:bg-accent/60 transition-colors",
-                          "flex items-center gap-2 border-b border-border/50 last:border-0"
+                          "flex items-center gap-2 border-b border-border/50 last:border-0",
                         )}
                       >
                         <span className="font-mono font-semibold text-xs text-primary min-w-[50px]">
                           {stock.symbol}
                         </span>
-                        <span className="flex-1 truncate">{stock.instrument_name}</span>
+                        <span className="flex-1 truncate">
+                          {stock.instrument_name}
+                        </span>
                         <span className="text-xs text-muted-foreground/80 shrink-0 font-mono">
                           {stock.mic_code || stock.exchange}
                         </span>
@@ -366,7 +391,8 @@ export function AddAssetDialog({
             {/* No results */}
             {noResults && !isSearching && searchQuery.length >= 2 && (
               <p className="text-xs text-muted-foreground">
-                Geen resultaten gevonden. Controleer de naam of ticker en probeer opnieuw.
+                Geen resultaten gevonden. Controleer de naam of ticker en
+                probeer opnieuw.
               </p>
             )}
           </div>
@@ -454,7 +480,9 @@ export function AddAssetDialog({
             <div className="flex flex-col gap-1.5">
               <Label>Type</Label>
               <div className="h-9 px-3 rounded-md border border-input bg-muted/40 flex items-center text-sm text-muted-foreground">
-                {typeLabel(forcedAssetType as FormAssetType ?? form.assetType)}
+                {typeLabel(
+                  (forcedAssetType as FormAssetType) ?? form.assetType,
+                )}
               </div>
             </div>
           )}
@@ -485,12 +513,18 @@ export function AddAssetDialog({
                     id="asset-ongoing-costs"
                     checked={form.hasOngoingCosts}
                     onCheckedChange={(checked) =>
-                      setForm((p) => ({ ...p, hasOngoingCosts: checked === true }))
+                      setForm((p) => ({
+                        ...p,
+                        hasOngoingCosts: checked === true,
+                      }))
                     }
                     className="mt-0.5"
                   />
                   <div className="flex flex-col gap-0.5">
-                    <Label htmlFor="asset-ongoing-costs" className="cursor-pointer font-medium text-sm">
+                    <Label
+                      htmlFor="asset-ongoing-costs"
+                      className="cursor-pointer font-medium text-sm"
+                    >
                       Lopende kosten van toepassing
                     </Label>
                     <p className="text-xs text-muted-foreground leading-relaxed">
@@ -511,11 +545,15 @@ export function AddAssetDialog({
                     max="5"
                     placeholder="bijv. 0,20"
                     value={form.ter}
-                    onChange={(e) => setForm((p) => ({ ...p, ter: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, ter: e.target.value }))
+                    }
                     className="num"
                   />
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Voer hier de jaarlijkse lopende kosten in (TER). Dit percentage is te vinden in de documentatie van het fonds. Voorbeeld: 0,20% voor een wereldwijd indexfonds.
+                    Voer hier de jaarlijkse lopende kosten in (TER). Dit
+                    percentage is te vinden in de documentatie van het fonds.
+                    Voorbeeld: 0,20% voor een wereldwijd indexfonds.
                   </p>
                 </div>
               )}
@@ -533,7 +571,10 @@ export function AddAssetDialog({
             >
               Annuleren
             </Button>
-            <Button type="submit" disabled={addAsset.isPending || isFetchingPrice}>
+            <Button
+              type="submit"
+              disabled={addAsset.isPending || isFetchingPrice}
+            >
               {addAsset.isPending && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
               )}

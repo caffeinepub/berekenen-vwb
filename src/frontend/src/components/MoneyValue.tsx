@@ -1,5 +1,5 @@
-import { formatEuro, formatEuroSigned, formatPercent } from "../utils/format";
 import { cn } from "@/lib/utils";
+import { formatEuro, formatEuroSigned, formatPercent } from "../utils/format";
 
 interface MoneyValueProps {
   amount: number;
@@ -36,7 +36,11 @@ interface ReturnValueProps {
   className?: string;
 }
 
-export function ReturnValue({ amount, percentage, className }: ReturnValueProps) {
+export function ReturnValue({
+  amount,
+  percentage,
+  className,
+}: ReturnValueProps) {
   const colorClass =
     amount > 0.005
       ? "text-gain"
@@ -45,7 +49,9 @@ export function ReturnValue({ amount, percentage, className }: ReturnValueProps)
         : "text-muted-foreground";
 
   return (
-    <span className={cn("num flex items-baseline gap-1.5", colorClass, className)}>
+    <span
+      className={cn("num flex items-baseline gap-1.5", colorClass, className)}
+    >
       <span>{formatEuroSigned(amount)}</span>
       {percentage !== undefined && (
         <span className="text-xs opacity-75">{formatPercent(percentage)}</span>

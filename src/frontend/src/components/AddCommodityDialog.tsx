@@ -1,21 +1,14 @@
-import { useState, useMemo } from "react";
-import { toast } from "sonner";
-import { AssetType, AssetView, TransactionType } from "../backend.d";
-import { useAddAsset, useAddTransaction } from "../hooks/useQueries";
-import { useCommodities } from "../hooks/useCommodities";
-import { dateToBigintNano, dateInputToDate, todayInputValue } from "../utils/format";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -23,7 +16,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { AssetType, type AssetView, TransactionType } from "../backend.d";
+import { useCommodities } from "../hooks/useCommodities";
+import { useAddAsset, useAddTransaction } from "../hooks/useQueries";
+import {
+  dateInputToDate,
+  dateToBigintNano,
+  todayInputValue,
+} from "../utils/format";
 import { formatEuro } from "../utils/format";
 
 // ─── Commodity definitions ────────────────────────────────────────────────────
@@ -128,7 +132,10 @@ const INITIAL_FORM: CommodityForm = {
   notes: "",
 };
 
-export function AddCommodityDialog({ assets, children }: AddCommodityDialogProps) {
+export function AddCommodityDialog({
+  assets,
+  children,
+}: AddCommodityDialogProps) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<CommodityForm>(INITIAL_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -148,11 +155,13 @@ export function AddCommodityDialog({ assets, children }: AddCommodityDialogProps
     }));
   };
 
-  const quantity = parseFloat(form.quantity.replace(",", "."));
-  const pricePerUnit = parseFloat(form.pricePerUnit.replace(",", "."));
-  const fees = form.fees ? parseFloat(form.fees.replace(",", ".")) : 0;
+  const quantity = Number.parseFloat(form.quantity.replace(",", "."));
+  const pricePerUnit = Number.parseFloat(form.pricePerUnit.replace(",", "."));
+  const fees = form.fees ? Number.parseFloat(form.fees.replace(",", ".")) : 0;
   const totalAmount =
-    !isNaN(quantity) && !isNaN(pricePerUnit) ? quantity * pricePerUnit : 0;
+    !Number.isNaN(quantity) && !Number.isNaN(pricePerUnit)
+      ? quantity * pricePerUnit
+      : 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -165,15 +174,15 @@ export function AddCommodityDialog({ assets, children }: AddCommodityDialogProps
       toast.error("Eenheid is verplicht");
       return;
     }
-    if (isNaN(quantity) || quantity <= 0) {
+    if (Number.isNaN(quantity) || quantity <= 0) {
       toast.error("Vul een positief aantal eenheden in");
       return;
     }
-    if (isNaN(pricePerUnit) || pricePerUnit < 0) {
+    if (Number.isNaN(pricePerUnit) || pricePerUnit < 0) {
       toast.error("Vul een geldige prijs per eenheid in");
       return;
     }
-    if (form.fees && isNaN(fees)) {
+    if (form.fees && Number.isNaN(fees)) {
       toast.error("Ongeldige transactiekosten");
       return;
     }
@@ -232,7 +241,9 @@ export function AddCommodityDialog({ assets, children }: AddCommodityDialogProps
       </DialogTrigger>
       <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-semibold">Grondstof toevoegen</DialogTitle>
+          <DialogTitle className="font-semibold">
+            Grondstof toevoegen
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           {/* Commodity type */}
@@ -261,7 +272,11 @@ export function AddCommodityDialog({ assets, children }: AddCommodityDialogProps
             </Label>
             <div className="flex gap-2">
               <Select
-                value={COMMODITY_UNITS.includes(form.unit as CommodityUnit) ? form.unit : "__custom__"}
+                value={
+                  COMMODITY_UNITS.includes(form.unit as CommodityUnit)
+                    ? form.unit
+                    : "__custom__"
+                }
                 onValueChange={(v) => {
                   if (v !== "__custom__") {
                     setForm((p) => ({ ...p, unit: v }));
@@ -317,7 +332,9 @@ export function AddCommodityDialog({ assets, children }: AddCommodityDialogProps
               min="0.00000001"
               placeholder="0,0000"
               value={form.quantity}
-              onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, quantity: e.target.value }))
+              }
               required
             />
           </div>
@@ -334,7 +351,9 @@ export function AddCommodityDialog({ assets, children }: AddCommodityDialogProps
               min="0"
               placeholder="0,000000"
               value={form.pricePerUnit}
-              onChange={(e) => setForm((p) => ({ ...p, pricePerUnit: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, pricePerUnit: e.target.value }))
+              }
               required
             />
           </div>
@@ -370,18 +389,26 @@ export function AddCommodityDialog({ assets, children }: AddCommodityDialogProps
               id="commodity-notes"
               placeholder="Optionele notitie…"
               value={form.notes}
-              onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, notes: e.target.value }))
+              }
               rows={2}
               className="resize-none"
             />
           </div>
 
           <DialogFooter className="mt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
               Annuleren
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {isSubmitting && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
               Toevoegen
             </Button>
           </DialogFooter>

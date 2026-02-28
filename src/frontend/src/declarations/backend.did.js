@@ -34,6 +34,11 @@ export const TransactionView = IDL.Record({
   'notes' : IDL.Opt(IDL.Text),
   'quantity' : IDL.Float64,
 });
+export const UserRole = IDL.Variant({
+  'admin' : IDL.Null,
+  'user' : IDL.Null,
+  'guest' : IDL.Null,
+});
 export const AssetView = IDL.Record({
   'currentPrice' : IDL.Float64,
   'ticker' : IDL.Text,
@@ -66,6 +71,7 @@ export const LoanView = IDL.Record({
   'loanedAmount' : IDL.Float64,
   'startDate' : Time,
 });
+export const UserProfile = IDL.Record({ 'name' : IDL.Text });
 export const AssetHistoryView = IDL.Record({
   'timestamp' : Time,
   'price' : IDL.Float64,
@@ -76,6 +82,7 @@ export const StakingRewardView = IDL.Record({
 });
 
 export const idlService = IDL.Service({
+  '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'addAsset' : IDL.Func([IDL.Text, IDL.Text, AssetType, IDL.Float64], [], []),
   'addHistoricalData' : IDL.Func([IDL.Text, Time, IDL.Float64], [], []),
   'addLoan' : IDL.Func(
@@ -98,6 +105,7 @@ export const idlService = IDL.Service({
     ),
   'addStakingReward' : IDL.Func([IDL.Text, Time, IDL.Float64], [], []),
   'addTransaction' : IDL.Func([TransactionView], [], []),
+  'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'deleteAsset' : IDL.Func([IDL.Text], [], []),
   'deleteLoan' : IDL.Func([IDL.Nat], [], []),
   'deleteLoanTransaction' : IDL.Func([IDL.Nat, IDL.Nat], [], []),
@@ -105,6 +113,8 @@ export const idlService = IDL.Service({
   'getAllAssets' : IDL.Func([], [IDL.Vec(AssetView)], ['query']),
   'getAllLoans' : IDL.Func([], [IDL.Vec(LoanView)], ['query']),
   'getAsset' : IDL.Func([IDL.Text], [AssetView], ['query']),
+  'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
+  'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getHistoricalData' : IDL.Func(
       [IDL.Text],
       [IDL.Vec(AssetHistoryView)],
@@ -120,6 +130,15 @@ export const idlService = IDL.Service({
       [IDL.Vec(TransactionView)],
       ['query'],
     ),
+  'getUserName' : IDL.Func([], [IDL.Text], ['query']),
+  'getUserProfile' : IDL.Func(
+      [IDL.Principal],
+      [IDL.Opt(UserProfile)],
+      ['query'],
+    ),
+  'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'setUserName' : IDL.Func([IDL.Text], [], []),
   'updateAsset' : IDL.Func(
       [IDL.Text, IDL.Text, AssetType, IDL.Float64],
       [],
@@ -169,6 +188,11 @@ export const idlFactory = ({ IDL }) => {
     'notes' : IDL.Opt(IDL.Text),
     'quantity' : IDL.Float64,
   });
+  const UserRole = IDL.Variant({
+    'admin' : IDL.Null,
+    'user' : IDL.Null,
+    'guest' : IDL.Null,
+  });
   const AssetView = IDL.Record({
     'currentPrice' : IDL.Float64,
     'ticker' : IDL.Text,
@@ -201,6 +225,7 @@ export const idlFactory = ({ IDL }) => {
     'loanedAmount' : IDL.Float64,
     'startDate' : Time,
   });
+  const UserProfile = IDL.Record({ 'name' : IDL.Text });
   const AssetHistoryView = IDL.Record({
     'timestamp' : Time,
     'price' : IDL.Float64,
@@ -211,6 +236,7 @@ export const idlFactory = ({ IDL }) => {
   });
   
   return IDL.Service({
+    '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'addAsset' : IDL.Func([IDL.Text, IDL.Text, AssetType, IDL.Float64], [], []),
     'addHistoricalData' : IDL.Func([IDL.Text, Time, IDL.Float64], [], []),
     'addLoan' : IDL.Func(
@@ -233,6 +259,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'addStakingReward' : IDL.Func([IDL.Text, Time, IDL.Float64], [], []),
     'addTransaction' : IDL.Func([TransactionView], [], []),
+    'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'deleteAsset' : IDL.Func([IDL.Text], [], []),
     'deleteLoan' : IDL.Func([IDL.Nat], [], []),
     'deleteLoanTransaction' : IDL.Func([IDL.Nat, IDL.Nat], [], []),
@@ -240,6 +267,8 @@ export const idlFactory = ({ IDL }) => {
     'getAllAssets' : IDL.Func([], [IDL.Vec(AssetView)], ['query']),
     'getAllLoans' : IDL.Func([], [IDL.Vec(LoanView)], ['query']),
     'getAsset' : IDL.Func([IDL.Text], [AssetView], ['query']),
+    'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
+    'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getHistoricalData' : IDL.Func(
         [IDL.Text],
         [IDL.Vec(AssetHistoryView)],
@@ -255,6 +284,15 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(TransactionView)],
         ['query'],
       ),
+    'getUserName' : IDL.Func([], [IDL.Text], ['query']),
+    'getUserProfile' : IDL.Func(
+        [IDL.Principal],
+        [IDL.Opt(UserProfile)],
+        ['query'],
+      ),
+    'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'setUserName' : IDL.Func([IDL.Text], [], []),
     'updateAsset' : IDL.Func(
         [IDL.Text, IDL.Text, AssetType, IDL.Float64],
         [],

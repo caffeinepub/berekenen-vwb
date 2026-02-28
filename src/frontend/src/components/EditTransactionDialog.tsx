@@ -1,27 +1,14 @@
-import { useState, useEffect, useRef } from "react";
-import { toast } from "sonner";
-import { AssetView, AssetType, TransactionView, TransactionType } from "../backend.d";
-import { useUpdateTransaction } from "../hooks/useQueries";
-import { calculateFifo } from "../utils/fifo";
-import {
-  dateToBigintNano,
-  dateInputToDate,
-  timeToDate,
-  formatQuantity,
-  dateToInputValue,
-} from "../utils/format";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -29,8 +16,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, AlertCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  AssetType,
+  type AssetView,
+  TransactionType,
+  type TransactionView,
+} from "../backend.d";
+import { useUpdateTransaction } from "../hooks/useQueries";
+import { calculateFifo } from "../utils/fifo";
+import {
+  dateInputToDate,
+  dateToBigintNano,
+  dateToInputValue,
+  formatQuantity,
+  timeToDate,
+} from "../utils/format";
 
 interface EditTransactionDialogProps {
   asset: AssetView;
@@ -54,12 +59,14 @@ export function EditTransactionDialog({
     quantity: String(transaction.quantity),
     pricePerUnit: String(transaction.pricePerUnit),
     fees: transaction.fees != null ? String(transaction.fees) : "",
-    hasOngoingCosts: transaction.hasOngoingCosts ?? false,
     notes: transaction.notes ?? "",
-    euroValue: transaction.euroValue != null ? String(transaction.euroValue) : "",
-    stakingEuroValue: transaction.transactionType === TransactionType.stakingReward && transaction.euroValue != null
-      ? String(transaction.euroValue)
-      : "",
+    euroValue:
+      transaction.euroValue != null ? String(transaction.euroValue) : "",
+    stakingEuroValue:
+      transaction.transactionType === TransactionType.stakingReward &&
+      transaction.euroValue != null
+        ? String(transaction.euroValue)
+        : "",
   });
   const updateTransaction = useUpdateTransaction();
   const sellPriceAutoFilled = useRef(false);
@@ -77,12 +84,14 @@ export function EditTransactionDialog({
         quantity: String(transaction.quantity),
         pricePerUnit: String(transaction.pricePerUnit),
         fees: transaction.fees != null ? String(transaction.fees) : "",
-        hasOngoingCosts: transaction.hasOngoingCosts ?? false,
         notes: transaction.notes ?? "",
-        euroValue: transaction.euroValue != null ? String(transaction.euroValue) : "",
-        stakingEuroValue: transaction.transactionType === TransactionType.stakingReward && transaction.euroValue != null
-          ? String(transaction.euroValue)
-          : "",
+        euroValue:
+          transaction.euroValue != null ? String(transaction.euroValue) : "",
+        stakingEuroValue:
+          transaction.transactionType === TransactionType.stakingReward &&
+          transaction.euroValue != null
+            ? String(transaction.euroValue)
+            : "",
       });
     }
     setOpen(isOpen);
@@ -114,9 +123,11 @@ export function EditTransactionDialog({
       ? calculateFifo(otherTransactions, asset.currentPrice).currentQuantity
       : null;
 
-  const quantity = parseFloat(form.quantity.replace(",", "."));
+  const quantity = Number.parseFloat(form.quantity.replace(",", "."));
   const isQuantityExceeded =
-    availableBalance !== null && !isNaN(quantity) && quantity > availableBalance;
+    availableBalance !== null &&
+    !Number.isNaN(quantity) &&
+    quantity > availableBalance;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,8 +137,10 @@ export function EditTransactionDialog({
 
     // Dividend: only needs euroValue
     if (isDividend) {
-      const parsedEuroValue = parseFloat(form.euroValue.replace(",", "."));
-      if (isNaN(parsedEuroValue) || parsedEuroValue <= 0) {
+      const parsedEuroValue = Number.parseFloat(
+        form.euroValue.replace(",", "."),
+      );
+      if (Number.isNaN(parsedEuroValue) || parsedEuroValue <= 0) {
         toast.error("Ongeldig ontvangen bedrag");
         return;
       }
@@ -154,27 +167,31 @@ export function EditTransactionDialog({
       return;
     }
 
-    const qty = parseFloat(form.quantity.replace(",", "."));
-    if (isNaN(qty) || qty <= 0) {
+    const qty = Number.parseFloat(form.quantity.replace(",", "."));
+    if (Number.isNaN(qty) || qty <= 0) {
       toast.error("Ongeldig aantal stuks");
       return;
     }
 
-    const price = isStaking ? 0 : parseFloat(form.pricePerUnit.replace(",", "."));
-    if (!isStaking && (isNaN(price) || price < 0)) {
+    const price = isStaking
+      ? 0
+      : Number.parseFloat(form.pricePerUnit.replace(",", "."));
+    if (!isStaking && (Number.isNaN(price) || price < 0)) {
       toast.error("Ongeldige prijs per stuk");
       return;
     }
 
-    const fees = form.fees ? parseFloat(form.fees.replace(",", ".")) : undefined;
-    if (form.fees && isNaN(fees!)) {
+    const fees = form.fees
+      ? Number.parseFloat(form.fees.replace(",", "."))
+      : undefined;
+    if (form.fees && Number.isNaN(fees!)) {
       toast.error("Ongeldige transactiekosten");
       return;
     }
 
     if (isQuantityExceeded) {
       toast.error(
-        `Onvoldoende saldo: beschikbaar ${formatQuantity(availableBalance!, isCrypto)} stuks`
+        `Onvoldoende saldo: beschikbaar ${formatQuantity(availableBalance!, isCrypto)} stuks`,
       );
       return;
     }
@@ -182,8 +199,8 @@ export function EditTransactionDialog({
     // Staking: also requires euro value
     let stakingEuro: number | undefined;
     if (isStaking) {
-      const parsed = parseFloat(form.stakingEuroValue.replace(",", "."));
-      if (isNaN(parsed) || parsed < 0) {
+      const parsed = Number.parseFloat(form.stakingEuroValue.replace(",", "."));
+      if (Number.isNaN(parsed) || parsed < 0) {
         toast.error("Ongeldige eurowaarde voor staking");
         return;
       }
@@ -202,7 +219,6 @@ export function EditTransactionDialog({
           pricePerUnit: isStaking ? 0 : price,
           fees: fees,
           euroValue: isStaking ? stakingEuro : undefined,
-          hasOngoingCosts: !isStaking && !isDividend ? form.hasOngoingCosts : undefined,
           notes: form.notes.trim() || undefined,
         },
       });
@@ -218,7 +234,9 @@ export function EditTransactionDialog({
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-semibold">Transactie bewerken</DialogTitle>
+          <DialogTitle className="font-semibold">
+            Transactie bewerken
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           {/* Transaction type */}
@@ -227,7 +245,10 @@ export function EditTransactionDialog({
             <Select
               value={form.transactionType}
               onValueChange={(v) =>
-                setForm((p) => ({ ...p, transactionType: v as TransactionType }))
+                setForm((p) => ({
+                  ...p,
+                  transactionType: v as TransactionType,
+                }))
               }
             >
               <SelectTrigger id="edit-tx-type">
@@ -277,7 +298,9 @@ export function EditTransactionDialog({
                 min="0.01"
                 placeholder="0,00"
                 value={form.euroValue}
-                onChange={(e) => setForm((p) => ({ ...p, euroValue: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, euroValue: e.target.value }))
+                }
                 required
               />
             </div>
@@ -287,7 +310,12 @@ export function EditTransactionDialog({
           {!isDividend && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-tx-qty">
-                {isCrypto ? "Hoeveelheid" : isCommodity ? "Aantal eenheden" : "Aantal stuks"} <span className="text-loss">*</span>
+                {isCrypto
+                  ? "Hoeveelheid"
+                  : isCommodity
+                    ? "Aantal eenheden"
+                    : "Aantal stuks"}{" "}
+                <span className="text-loss">*</span>
               </Label>
               <div className="relative">
                 <Input
@@ -297,8 +325,12 @@ export function EditTransactionDialog({
                   min="0.00000001"
                   placeholder={isCrypto ? "0.00000000" : "0,0000"}
                   value={form.quantity}
-                  onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
-                  className={cn(isQuantityExceeded && "border-loss focus-visible:ring-loss")}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, quantity: e.target.value }))
+                  }
+                  className={cn(
+                    isQuantityExceeded && "border-loss focus-visible:ring-loss",
+                  )}
                   required
                 />
               </div>
@@ -306,11 +338,12 @@ export function EditTransactionDialog({
                 <p
                   className={cn(
                     "text-xs flex items-center gap-1",
-                    isQuantityExceeded ? "text-loss" : "text-muted-foreground"
+                    isQuantityExceeded ? "text-loss" : "text-muted-foreground",
                   )}
                 >
                   {isQuantityExceeded && <AlertCircle className="w-3 h-3" />}
-                  Beschikbaar saldo: {formatQuantity(availableBalance, isCrypto)} stuks
+                  Beschikbaar saldo:{" "}
+                  {formatQuantity(availableBalance, isCrypto)} stuks
                 </p>
               )}
             </div>
@@ -320,7 +353,8 @@ export function EditTransactionDialog({
           {!isStaking && !isDividend && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-tx-price">
-                {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"} <span className="text-loss">*</span>
+                {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"}{" "}
+                <span className="text-loss">*</span>
               </Label>
               <Input
                 id="edit-tx-price"
@@ -342,7 +376,8 @@ export function EditTransactionDialog({
           {isStaking && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-tx-staking-euro">
-                Waarde in euro op moment van ontvangst (€) <span className="text-loss">*</span>
+                Waarde in euro op moment van ontvangst (€){" "}
+                <span className="text-loss">*</span>
               </Label>
               <Input
                 id="edit-tx-staking-euro"
@@ -351,7 +386,9 @@ export function EditTransactionDialog({
                 min="0"
                 placeholder="0,00"
                 value={form.stakingEuroValue}
-                onChange={(e) => setForm((p) => ({ ...p, stakingEuroValue: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, stakingEuroValue: e.target.value }))
+                }
                 required
               />
             </div>
@@ -368,11 +405,12 @@ export function EditTransactionDialog({
                 min="0"
                 placeholder="0,00"
                 value={form.fees}
-                onChange={(e) => setForm((p) => ({ ...p, fees: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, fees: e.target.value }))
+                }
               />
             </div>
           )}
-
 
           {/* Notes */}
           <div className="flex flex-col gap-1.5">
@@ -381,7 +419,9 @@ export function EditTransactionDialog({
               id="edit-tx-notes"
               placeholder="Optionele notitie…"
               value={form.notes}
-              onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, notes: e.target.value }))
+              }
               rows={2}
               className="resize-none"
             />
@@ -397,7 +437,10 @@ export function EditTransactionDialog({
             </Button>
             <Button
               type="submit"
-              disabled={updateTransaction.isPending || (!isDividend && isQuantityExceeded)}
+              disabled={
+                updateTransaction.isPending ||
+                (!isDividend && isQuantityExceeded)
+              }
             >
               {updateTransaction.isPending && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

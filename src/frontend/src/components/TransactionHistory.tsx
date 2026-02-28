@@ -1,13 +1,3 @@
-import { TransactionView, TransactionType, AssetType, AssetView } from "../backend.d";
-import { formatDate, formatQuantity, formatEuro } from "../utils/format";
-import { ReturnValue } from "./MoneyValue";
-import { TransactionTypeBadge } from "./AssetBadge";
-import { EditTransactionDialog } from "./EditTransactionDialog";
-import { ChevronDown, ChevronRight, Inbox, Pencil, Trash2 } from "lucide-react";
-import { useState } from "react";
-import { cn } from "@/lib/utils";
-import { toast } from "sonner";
-import { useDeleteTransaction } from "../hooks/useQueries";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,6 +9,21 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { cn } from "@/lib/utils";
+import { ChevronDown, ChevronRight, Inbox, Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import {
+  AssetType,
+  type AssetView,
+  TransactionType,
+  type TransactionView,
+} from "../backend.d";
+import { useDeleteTransaction } from "../hooks/useQueries";
+import { formatDate, formatEuro, formatQuantity } from "../utils/format";
+import { TransactionTypeBadge } from "./AssetBadge";
+import { EditTransactionDialog } from "./EditTransactionDialog";
+import { ReturnValue } from "./MoneyValue";
 
 interface TransactionHistoryProps {
   asset: AssetView;
@@ -37,20 +42,26 @@ interface TransactionWithProfit extends TransactionView {
 
 function computeTransactionProfits(
   transactions: TransactionView[],
-  currentPrice: number
+  _currentPrice: number,
 ): TransactionWithProfit[] {
   // Sort by date ascending for FIFO, keeping track of original indices
   const indexed = transactions.map((tx, i) => ({ tx, origIdx: i }));
   const sorted = [...indexed].sort((a, b) => Number(a.tx.date - b.tx.date));
 
-  interface Lot { quantity: number; costPerUnit: number; }
+  interface Lot {
+    quantity: number;
+    costPerUnit: number;
+  }
   const lots: Lot[] = [];
   const profitMap = new Map<number, number>(); // origIdx -> profit
 
   for (const { tx, origIdx } of sorted) {
     if (tx.transactionType === TransactionType.buy) {
       const feesPerUnit = (tx.fees ?? 0) / tx.quantity;
-      lots.push({ quantity: tx.quantity, costPerUnit: tx.pricePerUnit + feesPerUnit });
+      lots.push({
+        quantity: tx.quantity,
+        costPerUnit: tx.pricePerUnit + feesPerUnit,
+      });
     } else if (tx.transactionType === TransactionType.sell) {
       let remaining = tx.quantity;
       const saleRevenue = tx.pricePerUnit * tx.quantity - (tx.fees ?? 0);
@@ -96,7 +107,10 @@ interface DeleteTransactionButtonProps {
   index: number;
 }
 
-function DeleteTransactionButton({ ticker, index }: DeleteTransactionButtonProps) {
+function DeleteTransactionButton({
+  ticker,
+  index,
+}: DeleteTransactionButtonProps) {
   const deleteTransaction = useDeleteTransaction();
 
   const handleDelete = async () => {
@@ -123,8 +137,8 @@ function DeleteTransactionButton({ ticker, index }: DeleteTransactionButtonProps
         <AlertDialogHeader>
           <AlertDialogTitle>Transactie verwijderen?</AlertDialogTitle>
           <AlertDialogDescription>
-            Deze actie kan niet ongedaan worden gemaakt. De transactie wordt permanent
-            verwijderd uit je portfolio.
+            Deze actie kan niet ongedaan worden gemaakt. De transactie wordt
+            permanent verwijderd uit je portfolio.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -163,7 +177,11 @@ export function TransactionHistory({
         onClick={() => setOpen((p) => !p)}
         className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
       >
-        {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+        {open ? (
+          <ChevronDown className="w-3.5 h-3.5" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5" />
+        )}
         <span>{transactions.length} transacties</span>
       </button>
 
@@ -191,11 +209,11 @@ export function TransactionHistory({
                     Prijs/stuk
                   </th>
                   <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                     Kosten
-                   </th>
-                   <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                     Winst/Verlies
-                   </th>
+                    Kosten
+                  </th>
+                  <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Winst/Verlies
+                  </th>
                   <th className="w-16 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider" />
                 </tr>
               </thead>
@@ -205,7 +223,7 @@ export function TransactionHistory({
                     key={`${tx.date}-${idx}`}
                     className={cn(
                       "border-b border-border/50 last:border-0 group",
-                      "hover:bg-accent/30 transition-colors"
+                      "hover:bg-accent/30 transition-colors",
                     )}
                   >
                     <td className="py-2.5 pr-4 text-muted-foreground num text-xs">
@@ -217,17 +235,18 @@ export function TransactionHistory({
                     <td className="py-2.5 pr-4 text-right num">
                       {formatQuantity(tx.quantity, isCrypto)}
                     </td>
-                     <td className="py-2.5 pr-4 text-right num">
-                       {tx.transactionType === TransactionType.stakingReward ||
-                        tx.transactionType === TransactionType.dividend
-                         ? <span className="text-muted-foreground">—</span>
-                         : formatEuro(tx.pricePerUnit, 6)
-                       }
-                     </td>
-                     <td className="py-2.5 pr-4 text-right num text-muted-foreground">
-                       {tx.fees ? formatEuro(tx.fees) : "—"}
-                     </td>
-                     <td className="py-2.5 pr-4 text-right">
+                    <td className="py-2.5 pr-4 text-right num">
+                      {tx.transactionType === TransactionType.stakingReward ||
+                      tx.transactionType === TransactionType.dividend ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        formatEuro(tx.pricePerUnit, 6)
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right num text-muted-foreground">
+                      {tx.fees ? formatEuro(tx.fees) : "—"}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right">
                       {tx.realizedProfit !== undefined ? (
                         <ReturnValue amount={tx.realizedProfit} />
                       ) : (
@@ -266,5 +285,3 @@ export function TransactionHistory({
     </div>
   );
 }
-
-

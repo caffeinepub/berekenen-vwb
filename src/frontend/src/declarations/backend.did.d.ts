@@ -62,7 +62,12 @@ export interface TransactionView {
   'notes' : [] | [string],
   'quantity' : number,
 }
+export interface UserProfile { 'name' : string }
+export type UserRole = { 'admin' : null } |
+  { 'user' : null } |
+  { 'guest' : null };
 export interface _SERVICE {
+  '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addAsset' : ActorMethod<[string, string, AssetType, number], undefined>,
   'addHistoricalData' : ActorMethod<[string, Time, number], undefined>,
   'addLoan' : ActorMethod<
@@ -83,6 +88,7 @@ export interface _SERVICE {
   >,
   'addStakingReward' : ActorMethod<[string, Time, number], undefined>,
   'addTransaction' : ActorMethod<[TransactionView], undefined>,
+  'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'deleteAsset' : ActorMethod<[string], undefined>,
   'deleteLoan' : ActorMethod<[bigint], undefined>,
   'deleteLoanTransaction' : ActorMethod<[bigint, bigint], undefined>,
@@ -90,9 +96,16 @@ export interface _SERVICE {
   'getAllAssets' : ActorMethod<[], Array<AssetView>>,
   'getAllLoans' : ActorMethod<[], Array<LoanView>>,
   'getAsset' : ActorMethod<[string], AssetView>,
+  'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
+  'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getHistoricalData' : ActorMethod<[string], Array<AssetHistoryView>>,
   'getStakingRewards' : ActorMethod<[string], Array<StakingRewardView>>,
   'getTransactions' : ActorMethod<[string], Array<TransactionView>>,
+  'getUserName' : ActorMethod<[], string>,
+  'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
+  'isCallerAdmin' : ActorMethod<[], boolean>,
+  'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'setUserName' : ActorMethod<[string], undefined>,
   'updateAsset' : ActorMethod<[string, string, AssetType, number], undefined>,
   'updateLoan' : ActorMethod<
     [

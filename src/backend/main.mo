@@ -3,13 +3,17 @@ import Text "mo:core/Text";
 import Map "mo:core/Map";
 import List "mo:core/List";
 import Nat "mo:core/Nat";
-import Float "mo:core/Float";
 import Int "mo:core/Int";
+import Float "mo:core/Float";
 import Iter "mo:core/Iter";
-import Array "mo:core/Array";
 import Runtime "mo:core/Runtime";
+import Principal "mo:core/Principal";
 
-actor {
+import MixinAuthorization "authorization/MixinAuthorization";
+import AccessControl "authorization/access-control";
+
+// Specify the data migration function in with-clause
+ actor {
   // Public type definitions
   type AssetType = {
     #stock;
@@ -86,6 +90,10 @@ actor {
     transactions : [LoanTransactionView];
   };
 
+  public type UserProfile = {
+    name : Text;
+  };
+
   // Internal type definitions
   type Asset = {
     name : Text;
@@ -139,14 +147,45 @@ actor {
     transactions : List.List<LoanTransaction>;
   };
 
-  // Data storage
-  let assets = Map.empty<Text, Asset>();
-  let stakingRewards = Map.empty<Text, List.List<StakingReward>>();
-  let historicalData = Map.empty<Text, List.List<AssetHistory>>();
-  let loans = Map.empty<Nat, Loan>();
+  type UserData = {
+    assets : Map.Map<Text, Asset>;
+    stakingRewards : Map.Map<Text, List.List<StakingReward>>;
+    historicalData : Map.Map<Text, List.List<AssetHistory>>;
+    loans : Map.Map<Nat, Loan>;
+    userName : Text;
+    nextLoanId : Nat;
+    nextLoanTxId : Nat;
+  };
 
-  var nextLoanId = 0;
-  var nextLoanTxId = 0;
+  // Initialize the user system state
+  let accessControlState = AccessControl.initState();
+  include MixinAuthorization(accessControlState);
+
+  // Global user data storage
+  let userData = Map.empty<Principal, UserData>();
+
+  // User profiles storage
+  let userProfiles = Map.empty<Principal, UserProfile>();
+
+  // Helper functions for isolated user state
+  func getOrCreateUserData(principal : Principal) : UserData {
+    switch (userData.get(principal)) {
+      case (null) {
+        let newUserData : UserData = {
+          assets = Map.empty<Text, Asset>();
+          stakingRewards = Map.empty<Text, List.List<StakingReward>>();
+          historicalData = Map.empty<Text, List.List<AssetHistory>>();
+          loans = Map.empty<Nat, Loan>();
+          userName = "";
+          nextLoanId = 0;
+          nextLoanTxId = 0;
+        };
+        userData.add(principal, newUserData);
+        newUserData;
+      };
+      case (?data) { data };
+    };
+  };
 
   // Conversion functions
   func toAssetView(asset : Asset) : AssetView {
@@ -215,20 +254,60 @@ actor {
     };
   };
 
+  // User profile management functions
+  public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can save profiles");
+    };
+    userProfiles.get(caller);
+  };
+
+  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
+    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
+      Runtime.trap("Unauthorized: Can only view your own profile");
+    };
+    userProfiles.get(user);
+  };
+
+  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can save profiles");
+    };
+    userProfiles.add(caller, profile);
+  };
+
   // Asset management functions
   public shared ({ caller }) func addAsset(name : Text, ticker : Text, assetType : AssetType, currentPrice : Float) : async () {
-    let asset = {
-      name;
-      ticker;
-      assetType;
-      currentPrice;
-      transactions = List.empty<Transaction>();
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add assets");
     };
-    assets.add(ticker, asset);
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.assets.get(ticker)) {
+      case (null) {
+        let asset = {
+          name;
+          ticker;
+          assetType;
+          currentPrice;
+          transactions = List.empty<Transaction>();
+        };
+        callerData.assets.add(ticker, asset);
+        userData.add(caller, callerData);
+      };
+      case (?_) { Runtime.trap("Asset already exists") };
+    };
   };
 
   public shared ({ caller }) func updateAsset(ticker : Text, name : Text, assetType : AssetType, currentPrice : Float) : async () {
-    switch (assets.get(ticker)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update assets");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.assets.get(ticker)) {
       case (null) { Runtime.trap("Asset does not exist") };
       case (?existingAsset) {
         let updatedAsset = {
@@ -238,60 +317,89 @@ actor {
           currentPrice;
           transactions = existingAsset.transactions;
         };
-        assets.add(ticker, updatedAsset);
+        callerData.assets.add(ticker, updatedAsset);
+        userData.add(caller, callerData);
       };
     };
   };
 
   public shared ({ caller }) func deleteAsset(ticker : Text) : async () {
-    if (not assets.containsKey(ticker)) {
-      Runtime.trap("Asset does not exist");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can delete assets");
     };
 
-    assets.remove(ticker);
-    stakingRewards.remove(ticker);
-    historicalData.remove(ticker);
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.assets.get(ticker)) {
+      case (null) { Runtime.trap("Asset does not exist") };
+      case (?_) {
+        callerData.assets.remove(ticker);
+        callerData.stakingRewards.remove(ticker);
+        callerData.historicalData.remove(ticker);
+        userData.add(caller, callerData);
+      };
+    };
   };
 
   public query ({ caller }) func getAsset(ticker : Text) : async AssetView {
-    switch (assets.get(ticker)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view assets");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.assets.get(ticker)) {
       case (null) { Runtime.trap("Asset does not exist") };
       case (?asset) { toAssetView(asset) };
     };
   };
 
   public query ({ caller }) func getAllAssets() : async [AssetView] {
-    assets.values().map(func(asset) { toAssetView(asset) }).toArray();
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view assets");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+    callerData.assets.values().map(func(asset) { toAssetView(asset) }).toArray();
   };
 
   public shared ({ caller }) func addTransaction(transaction : TransactionView) : async () {
-    if (not assets.containsKey(transaction.asset)) {
-      Runtime.trap("Asset does not exist");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add transactions");
     };
 
-    let internalTransaction = {
-      asset = transaction.asset;
-      date = transaction.date;
-      transactionType = transaction.transactionType;
-      quantity = transaction.quantity;
-      pricePerUnit = transaction.pricePerUnit;
-      fees = transaction.fees;
-      hasOngoingCosts = transaction.hasOngoingCosts;
-      notes = transaction.notes;
-      euroValue = transaction.euroValue;
-    };
+    let callerData = getOrCreateUserData(caller);
 
-    switch (assets.get(transaction.asset)) {
-      case (null) { Runtime.trap("Asset not found after existence check") };
+    switch (callerData.assets.get(transaction.asset)) {
+      case (null) { Runtime.trap("Asset does not exist") };
       case (?asset) {
+        let internalTransaction = {
+          asset = transaction.asset;
+          date = transaction.date;
+          transactionType = transaction.transactionType;
+          quantity = transaction.quantity;
+          pricePerUnit = transaction.pricePerUnit;
+          fees = transaction.fees;
+          hasOngoingCosts = transaction.hasOngoingCosts;
+          notes = transaction.notes;
+          euroValue = transaction.euroValue;
+        };
+
         asset.transactions.add(internalTransaction);
-        assets.add(transaction.asset, asset);
+        callerData.assets.add(transaction.asset, asset);
+        userData.add(caller, callerData);
       };
     };
   };
 
   public shared ({ caller }) func updateTransaction(ticker : Text, index : Nat, transaction : TransactionView) : async () {
-    switch (assets.get(ticker)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update transactions");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.assets.get(ticker)) {
       case (null) { Runtime.trap("Asset does not exist") };
       case (?asset) {
         let transactionsArray = asset.transactions.toArray();
@@ -299,38 +407,46 @@ actor {
           Runtime.trap("Transaction does not exist");
         };
 
-        let updatedTransactions = Array.tabulate(
-          transactionsArray.size(),
-          func(i) {
-            if (i == index) {
-              {
-                asset = transaction.asset;
-                date = transaction.date;
-                transactionType = transaction.transactionType;
-                quantity = transaction.quantity;
-                pricePerUnit = transaction.pricePerUnit;
-                fees = transaction.fees;
-                hasOngoingCosts = transaction.hasOngoingCosts;
-                notes = transaction.notes;
-                euroValue = transaction.euroValue;
+        let updatedTransactions = List.fromArray<Transaction>(
+          Array.tabulate(
+            transactionsArray.size(),
+            func(i) {
+              if (i == index) {
+                {
+                  asset = transaction.asset;
+                  date = transaction.date;
+                  transactionType = transaction.transactionType;
+                  quantity = transaction.quantity;
+                  pricePerUnit = transaction.pricePerUnit;
+                  fees = transaction.fees;
+                  hasOngoingCosts = transaction.hasOngoingCosts;
+                  notes = transaction.notes;
+                  euroValue = transaction.euroValue;
+                };
+              } else {
+                transactionsArray[i];
               };
-            } else {
-              transactionsArray[i];
-            };
-          },
+            },
+          )
         );
 
-        let newTransactions = List.fromArray<Transaction>(updatedTransactions);
         let updatedAsset = {
-          asset with transactions = newTransactions
+          asset with transactions = updatedTransactions
         };
-        assets.add(ticker, updatedAsset);
+        callerData.assets.add(ticker, updatedAsset);
+        userData.add(caller, callerData);
       };
     };
   };
 
   public shared ({ caller }) func deleteTransaction(ticker : Text, index : Nat) : async () {
-    switch (assets.get(ticker)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can delete transactions");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.assets.get(ticker)) {
       case (null) { Runtime.trap("Asset does not exist") };
       case (?asset) {
         let transactionsArray = asset.transactions.toArray();
@@ -349,13 +465,20 @@ actor {
         let updatedAsset = {
           asset with transactions = newTransactions
         };
-        assets.add(ticker, updatedAsset);
+        callerData.assets.add(ticker, updatedAsset);
+        userData.add(caller, callerData);
       };
     };
   };
 
   public query ({ caller }) func getTransactions(asset : Text) : async [TransactionView] {
-    switch (assets.get(asset)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view transactions");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.assets.get(asset)) {
       case (null) { [] };
       case (?asset) {
         let transactionArray = asset.transactions.toArray();
@@ -370,23 +493,37 @@ actor {
 
   // Staking rewards
   public shared ({ caller }) func addStakingReward(asset : Text, date : Time.Time, quantity : Float) : async () {
-    if (not assets.containsKey(asset)) {
-      Runtime.trap("Asset does not exist");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add staking rewards");
     };
 
-    let stakingReward = { date; quantity };
+    let callerData = getOrCreateUserData(caller);
 
-    var rewardsList = switch (stakingRewards.get(asset)) {
-      case (?list) { list };
-      case (null) { List.empty<StakingReward>() };
+    switch (callerData.assets.get(asset)) {
+      case (null) { Runtime.trap("Asset does not exist") };
+      case (?_) {
+        let stakingReward = { date; quantity };
+
+        var rewardsList = switch (callerData.stakingRewards.get(asset)) {
+          case (?list) { list };
+          case (null) { List.empty<StakingReward>() };
+        };
+
+        rewardsList.add(stakingReward);
+        callerData.stakingRewards.add(asset, rewardsList);
+        userData.add(caller, callerData);
+      };
     };
-
-    rewardsList.add(stakingReward);
-    stakingRewards.add(asset, rewardsList);
   };
 
   public query ({ caller }) func getStakingRewards(asset : Text) : async [StakingRewardView] {
-    switch (stakingRewards.get(asset)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view staking rewards");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.stakingRewards.get(asset)) {
       case (null) { [] };
       case (?list) {
         let rewardsArray = list.toArray();
@@ -401,23 +538,37 @@ actor {
 
   // Historical data management
   public shared ({ caller }) func addHistoricalData(asset : Text, timestamp : Time.Time, price : Float) : async () {
-    if (not assets.containsKey(asset)) {
-      Runtime.trap("Asset does not exist");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add historical data");
     };
 
-    let entry = { timestamp; price };
+    let callerData = getOrCreateUserData(caller);
 
-    var historyList = switch (historicalData.get(asset)) {
-      case (?list) { list };
-      case (null) { List.empty<AssetHistory>() };
+    switch (callerData.assets.get(asset)) {
+      case (null) { Runtime.trap("Asset does not exist") };
+      case (?_) {
+        let entry = { timestamp; price };
+
+        var historyList = switch (callerData.historicalData.get(asset)) {
+          case (?list) { list };
+          case (null) { List.empty<AssetHistory>() };
+        };
+
+        historyList.add(entry);
+        callerData.historicalData.add(asset, historyList);
+        userData.add(caller, callerData);
+      };
     };
-
-    historyList.add(entry);
-    historicalData.add(asset, historyList);
   };
 
   public query ({ caller }) func getHistoricalData(asset : Text) : async [AssetHistoryView] {
-    switch (historicalData.get(asset)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view historical data");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.historicalData.get(asset)) {
       case (null) { [] };
       case (?list) {
         let historyArray = list.toArray();
@@ -431,7 +582,6 @@ actor {
   };
 
   // Loan management functions
-
   public shared ({ caller }) func addLoan(
     name : Text,
     startDate : Time.Time,
@@ -441,10 +591,14 @@ actor {
     durationMonths : ?Nat,
     notes : ?Text,
   ) : async Nat {
-    let id = nextLoanId;
-    nextLoanId += 1;
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add loans");
+    };
 
-    let loan = {
+    let callerData = getOrCreateUserData(caller);
+    let id = callerData.nextLoanId;
+
+    let newLoan = {
       id;
       name;
       startDate;
@@ -457,7 +611,13 @@ actor {
       transactions = List.empty<LoanTransaction>();
     };
 
-    loans.add(id, loan);
+    callerData.loans.add(id, newLoan);
+    let updatedCallerData = {
+      callerData with
+      loans = callerData.loans;
+      nextLoanId = callerData.nextLoanId + 1;
+    };
+    userData.add(caller, updatedCallerData);
     id;
   };
 
@@ -472,7 +632,13 @@ actor {
     notes : ?Text,
     status : LoanStatus,
   ) : async () {
-    switch (loans.get(id)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can update loans");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.loans.get(id)) {
       case (null) { Runtime.trap("Loan does not exist") };
       case (?existingLoan) {
         let updatedLoan = {
@@ -487,20 +653,35 @@ actor {
           status;
           transactions = existingLoan.transactions;
         };
-        loans.add(id, updatedLoan);
+        callerData.loans.add(id, updatedLoan);
+        userData.add(caller, callerData);
       };
     };
   };
 
   public shared ({ caller }) func deleteLoan(id : Nat) : async () {
-    if (not loans.containsKey(id)) {
-      Runtime.trap("Loan does not exist");
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can delete loans");
     };
-    loans.remove(id);
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.loans.get(id)) {
+      case (null) { Runtime.trap("Loan does not exist") };
+      case (?_) {
+        callerData.loans.remove(id);
+        userData.add(caller, callerData);
+      };
+    };
   };
 
   public query ({ caller }) func getAllLoans() : async [LoanView] {
-    loans.values().map(func(loan) { toLoanView(loan) }).toArray();
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view loans");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+    callerData.loans.values().map(func(loan) { toLoanView(loan) }).toArray();
   };
 
   public shared ({ caller }) func addLoanTransaction(
@@ -510,11 +691,16 @@ actor {
     amount : Float,
     notes : ?Text,
   ) : async Nat {
-    switch (loans.get(loanId)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can add loan transactions");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.loans.get(loanId)) {
       case (null) { Runtime.trap("Loan does not exist") };
       case (?loan) {
-        let txId = nextLoanTxId;
-        nextLoanTxId += 1;
+        let txId = callerData.nextLoanTxId;
 
         let loanTransaction = {
           id = txId;
@@ -526,22 +712,56 @@ actor {
         };
 
         loan.transactions.add(loanTransaction);
-        loans.add(loanId, loan);
+        callerData.loans.add(loanId, loan);
+
+        let updatedCallerData = {
+          callerData with
+          loans = callerData.loans;
+          nextLoanTxId = callerData.nextLoanTxId + 1;
+        };
+        userData.add(caller, updatedCallerData);
         txId;
       };
     };
   };
 
   public shared ({ caller }) func deleteLoanTransaction(loanId : Nat, txId : Nat) : async () {
-    switch (loans.get(loanId)) {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can delete loan transactions");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+
+    switch (callerData.loans.get(loanId)) {
       case (null) { Runtime.trap("Loan does not exist") };
       case (?loan) {
         let transactionsArray = loan.transactions.toArray();
         let filteredTransactions = transactionsArray.filter(func(tx) { tx.id != txId });
         let newTransactions = List.fromArray<LoanTransaction>(filteredTransactions);
         let updatedLoan = { loan with transactions = newTransactions };
-        loans.add(loanId, updatedLoan);
+        callerData.loans.add(loanId, updatedLoan);
+        userData.add(caller, callerData);
       };
     };
+  };
+
+  // User name management
+  public shared ({ caller }) func setUserName(name : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can set user name");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+    let updatedCallerData = { callerData with userName = name };
+    userData.add(caller, updatedCallerData);
+  };
+
+  public query ({ caller }) func getUserName() : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can get user name");
+    };
+
+    let callerData = getOrCreateUserData(caller);
+    callerData.userName;
   };
 };

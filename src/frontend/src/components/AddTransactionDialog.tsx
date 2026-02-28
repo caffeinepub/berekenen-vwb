@@ -1,21 +1,14 @@
-import { useState, useEffect, useRef } from "react";
-import { toast } from "sonner";
-import { AssetView, AssetType, TransactionType } from "../backend.d";
-import { useAddTransaction } from "../hooks/useQueries";
-import { calculateFifo } from "../utils/fifo";
-import { dateToBigintNano, dateInputToDate, todayInputValue, formatQuantity } from "../utils/format";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -23,8 +16,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2, Plus, AlertCircle } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { AlertCircle, Loader2, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { AssetType, type AssetView, TransactionType } from "../backend.d";
+import { useAddTransaction } from "../hooks/useQueries";
+import { calculateFifo } from "../utils/fifo";
+import {
+  dateInputToDate,
+  dateToBigintNano,
+  formatQuantity,
+  todayInputValue,
+} from "../utils/format";
 
 interface AddTransactionDialogProps {
   assets: AssetView[];
@@ -53,7 +58,10 @@ export function AddTransactionDialog({
   commodityTickers,
 }: AddTransactionDialogProps) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ ...INITIAL_FORM, ticker: defaultTicker ?? "" });
+  const [form, setForm] = useState({
+    ...INITIAL_FORM,
+    ticker: defaultTicker ?? "",
+  });
   const addTransaction = useAddTransaction();
   // Track whether the sell price was auto-filled (so manual edits are preserved)
   const sellPriceAutoFilled = useRef(false);
@@ -67,7 +75,9 @@ export function AddTransactionDialog({
 
   const selectedAsset = assets.find((a) => a.ticker === form.ticker);
   const isCrypto = selectedAsset?.assetType === AssetType.crypto;
-  const isCommodity = !!(selectedAsset && commodityTickers?.has(selectedAsset.ticker));
+  const isCommodity = !!(
+    selectedAsset && commodityTickers?.has(selectedAsset.ticker)
+  );
   const isStaking = form.transactionType === TransactionType.stakingReward;
   const isDividend = form.transactionType === TransactionType.dividend;
 
@@ -79,7 +89,10 @@ export function AddTransactionDialog({
       selectedAsset.currentPrice > 0 &&
       !sellPriceAutoFilled.current
     ) {
-      setForm((p) => ({ ...p, pricePerUnit: String(selectedAsset.currentPrice) }));
+      setForm((p) => ({
+        ...p,
+        pricePerUnit: String(selectedAsset.currentPrice),
+      }));
       sellPriceAutoFilled.current = true;
     } else if (form.transactionType !== TransactionType.sell) {
       sellPriceAutoFilled.current = false;
@@ -89,12 +102,15 @@ export function AddTransactionDialog({
   // Calculate available balance for sell validation
   const availableBalance =
     selectedAsset && form.transactionType === TransactionType.sell
-      ? calculateFifo(selectedAsset.transactions, selectedAsset.currentPrice).currentQuantity
+      ? calculateFifo(selectedAsset.transactions, selectedAsset.currentPrice)
+          .currentQuantity
       : null;
 
-  const quantity = parseFloat(form.quantity.replace(",", "."));
+  const quantity = Number.parseFloat(form.quantity.replace(",", "."));
   const isQuantityExceeded =
-    availableBalance !== null && !isNaN(quantity) && quantity > availableBalance;
+    availableBalance !== null &&
+    !Number.isNaN(quantity) &&
+    quantity > availableBalance;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -106,8 +122,10 @@ export function AddTransactionDialog({
 
     // Dividend: only needs euroValue
     if (isDividend) {
-      const parsedEuroValue = parseFloat(form.euroValue.replace(",", "."));
-      if (isNaN(parsedEuroValue) || parsedEuroValue <= 0) {
+      const parsedEuroValue = Number.parseFloat(
+        form.euroValue.replace(",", "."),
+      );
+      if (Number.isNaN(parsedEuroValue) || parsedEuroValue <= 0) {
         toast.error("Ongeldig ontvangen bedrag");
         return;
       }
@@ -132,27 +150,31 @@ export function AddTransactionDialog({
       return;
     }
 
-    const qty = parseFloat(form.quantity.replace(",", "."));
-    if (isNaN(qty) || qty <= 0) {
+    const qty = Number.parseFloat(form.quantity.replace(",", "."));
+    if (Number.isNaN(qty) || qty <= 0) {
       toast.error("Ongeldig aantal stuks");
       return;
     }
 
-    const price = isStaking ? 0 : parseFloat(form.pricePerUnit.replace(",", "."));
-    if (!isStaking && (isNaN(price) || price < 0)) {
+    const price = isStaking
+      ? 0
+      : Number.parseFloat(form.pricePerUnit.replace(",", "."));
+    if (!isStaking && (Number.isNaN(price) || price < 0)) {
       toast.error("Ongeldige prijs per stuk");
       return;
     }
 
-    const fees = form.fees ? parseFloat(form.fees.replace(",", ".")) : undefined;
-    if (form.fees && isNaN(fees!)) {
+    const fees = form.fees
+      ? Number.parseFloat(form.fees.replace(",", "."))
+      : undefined;
+    if (form.fees && Number.isNaN(fees!)) {
       toast.error("Ongeldige transactiekosten");
       return;
     }
 
     if (isQuantityExceeded) {
       toast.error(
-        `Onvoldoende saldo: beschikbaar ${formatQuantity(availableBalance!, isCrypto)} stuks`
+        `Onvoldoende saldo: beschikbaar ${formatQuantity(availableBalance!, isCrypto)} stuks`,
       );
       return;
     }
@@ -160,8 +182,8 @@ export function AddTransactionDialog({
     // Staking: also requires a euro value at time of receipt
     let stakingEuro: number | undefined;
     if (isStaking) {
-      const parsed = parseFloat(form.stakingEuroValue.replace(",", "."));
-      if (isNaN(parsed) || parsed < 0) {
+      const parsed = Number.parseFloat(form.stakingEuroValue.replace(",", "."));
+      if (Number.isNaN(parsed) || parsed < 0) {
         toast.error("Ongeldige eurowaarde voor staking");
         return;
       }
@@ -201,7 +223,9 @@ export function AddTransactionDialog({
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="font-semibold">Transactie toevoegen</DialogTitle>
+          <DialogTitle className="font-semibold">
+            Transactie toevoegen
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           {/* Asset */}
@@ -220,8 +244,12 @@ export function AddTransactionDialog({
                 {assets.map((asset) => (
                   <SelectItem key={asset.ticker} value={asset.ticker}>
                     <span className="flex items-center gap-2">
-                      <span className="font-mono font-semibold text-xs">{asset.ticker}</span>
-                      <span className="text-muted-foreground">{asset.name}</span>
+                      <span className="font-mono font-semibold text-xs">
+                        {asset.ticker}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {asset.name}
+                      </span>
                     </span>
                   </SelectItem>
                 ))}
@@ -235,7 +263,10 @@ export function AddTransactionDialog({
             <Select
               value={form.transactionType}
               onValueChange={(v) =>
-                setForm((p) => ({ ...p, transactionType: v as TransactionType }))
+                setForm((p) => ({
+                  ...p,
+                  transactionType: v as TransactionType,
+                }))
               }
             >
               <SelectTrigger id="tx-type">
@@ -285,7 +316,9 @@ export function AddTransactionDialog({
                 min="0.01"
                 placeholder="0,00"
                 value={form.euroValue}
-                onChange={(e) => setForm((p) => ({ ...p, euroValue: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, euroValue: e.target.value }))
+                }
                 required
               />
             </div>
@@ -295,7 +328,12 @@ export function AddTransactionDialog({
           {!isDividend && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-qty">
-                {isCrypto ? "Hoeveelheid" : isCommodity ? "Aantal eenheden" : "Aantal stuks"} <span className="text-loss">*</span>
+                {isCrypto
+                  ? "Hoeveelheid"
+                  : isCommodity
+                    ? "Aantal eenheden"
+                    : "Aantal stuks"}{" "}
+                <span className="text-loss">*</span>
               </Label>
               <div className="relative">
                 <Input
@@ -305,8 +343,12 @@ export function AddTransactionDialog({
                   min="0.00000001"
                   placeholder={isCrypto ? "0.00000000" : "0,0000"}
                   value={form.quantity}
-                  onChange={(e) => setForm((p) => ({ ...p, quantity: e.target.value }))}
-                  className={cn(isQuantityExceeded && "border-loss focus-visible:ring-loss")}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, quantity: e.target.value }))
+                  }
+                  className={cn(
+                    isQuantityExceeded && "border-loss focus-visible:ring-loss",
+                  )}
                   required
                 />
               </div>
@@ -314,11 +356,12 @@ export function AddTransactionDialog({
                 <p
                   className={cn(
                     "text-xs flex items-center gap-1",
-                    isQuantityExceeded ? "text-loss" : "text-muted-foreground"
+                    isQuantityExceeded ? "text-loss" : "text-muted-foreground",
                   )}
                 >
                   {isQuantityExceeded && <AlertCircle className="w-3 h-3" />}
-                  Beschikbaar saldo: {formatQuantity(availableBalance, isCrypto)} stuks
+                  Beschikbaar saldo:{" "}
+                  {formatQuantity(availableBalance, isCrypto)} stuks
                 </p>
               )}
             </div>
@@ -328,7 +371,8 @@ export function AddTransactionDialog({
           {!isStaking && !isDividend && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-price">
-                {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"} <span className="text-loss">*</span>
+                {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"}{" "}
+                <span className="text-loss">*</span>
               </Label>
               <Input
                 id="tx-price"
@@ -350,7 +394,8 @@ export function AddTransactionDialog({
           {isStaking && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-staking-euro">
-                Waarde in euro op moment van ontvangst (€) <span className="text-loss">*</span>
+                Waarde in euro op moment van ontvangst (€){" "}
+                <span className="text-loss">*</span>
               </Label>
               <Input
                 id="tx-staking-euro"
@@ -359,7 +404,9 @@ export function AddTransactionDialog({
                 min="0"
                 placeholder="0,00"
                 value={form.stakingEuroValue}
-                onChange={(e) => setForm((p) => ({ ...p, stakingEuroValue: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, stakingEuroValue: e.target.value }))
+                }
                 required
               />
             </div>
@@ -376,7 +423,9 @@ export function AddTransactionDialog({
                 min="0"
                 placeholder="0,00"
                 value={form.fees}
-                onChange={(e) => setForm((p) => ({ ...p, fees: e.target.value }))}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, fees: e.target.value }))
+                }
               />
             </div>
           )}
@@ -388,7 +437,9 @@ export function AddTransactionDialog({
               id="tx-notes"
               placeholder="Optionele notitie…"
               value={form.notes}
-              onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, notes: e.target.value }))
+              }
               rows={2}
               className="resize-none"
             />
@@ -404,7 +455,9 @@ export function AddTransactionDialog({
             </Button>
             <Button
               type="submit"
-              disabled={addTransaction.isPending || (!isDividend && isQuantityExceeded)}
+              disabled={
+                addTransaction.isPending || (!isDividend && isQuantityExceeded)
+              }
             >
               {addTransaction.isPending && (
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />

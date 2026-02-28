@@ -98,6 +98,96 @@
     --sidebar-ring: 0.6 0.14 220;
   }
 
+  /* Midnight theme — deep black with blue accents */
+  .theme-midnight {
+    --background: 0.08 0.015 255;
+    --foreground: 0.93 0.008 250;
+    --card: 0.11 0.018 255;
+    --card-foreground: 0.93 0.008 250;
+    --popover: 0.13 0.02 255;
+    --popover-foreground: 0.93 0.008 250;
+    --primary: 0.68 0.18 240;
+    --primary-foreground: 0.08 0.015 255;
+    --secondary: 0.16 0.022 255;
+    --secondary-foreground: 0.93 0.008 250;
+    --muted: 0.16 0.022 255;
+    --muted-foreground: 0.58 0.015 255;
+    --accent: 0.2 0.028 255;
+    --accent-foreground: 0.93 0.008 250;
+    --destructive: 0.65 0.22 25;
+    --destructive-foreground: 0.08 0.015 255;
+    --border: 0.22 0.02 255;
+    --input: 0.22 0.02 255;
+    --ring: 0.58 0.18 240;
+    --sidebar: 0.11 0.018 255;
+    --sidebar-foreground: 0.93 0.008 250;
+    --sidebar-primary: 0.68 0.18 240;
+    --sidebar-primary-foreground: 0.08 0.015 255;
+    --sidebar-accent: 0.16 0.022 255;
+    --sidebar-accent-foreground: 0.93 0.008 250;
+    --sidebar-border: 0.22 0.02 255;
+  }
+
+  /* Forest theme — dark with green accents */
+  .theme-forest {
+    --background: 0.12 0.02 145;
+    --foreground: 0.92 0.01 145;
+    --card: 0.16 0.025 145;
+    --card-foreground: 0.92 0.01 145;
+    --popover: 0.18 0.028 145;
+    --popover-foreground: 0.92 0.01 145;
+    --primary: 0.68 0.18 145;
+    --primary-foreground: 0.12 0.02 145;
+    --secondary: 0.22 0.03 145;
+    --secondary-foreground: 0.92 0.01 145;
+    --muted: 0.22 0.03 145;
+    --muted-foreground: 0.58 0.015 145;
+    --accent: 0.26 0.035 145;
+    --accent-foreground: 0.92 0.01 145;
+    --destructive: 0.65 0.22 25;
+    --destructive-foreground: 0.12 0.02 145;
+    --border: 0.28 0.025 145;
+    --input: 0.28 0.025 145;
+    --ring: 0.6 0.16 145;
+    --sidebar: 0.16 0.025 145;
+    --sidebar-foreground: 0.92 0.01 145;
+    --sidebar-primary: 0.68 0.18 145;
+    --sidebar-primary-foreground: 0.12 0.02 145;
+    --sidebar-accent: 0.22 0.03 145;
+    --sidebar-accent-foreground: 0.92 0.01 145;
+    --sidebar-border: 0.28 0.025 145;
+  }
+
+  /* Ocean theme — dark with cyan/teal accents */
+  .theme-ocean {
+    --background: 0.12 0.02 195;
+    --foreground: 0.92 0.01 195;
+    --card: 0.16 0.025 195;
+    --card-foreground: 0.92 0.01 195;
+    --popover: 0.18 0.028 195;
+    --popover-foreground: 0.92 0.01 195;
+    --primary: 0.68 0.16 195;
+    --primary-foreground: 0.12 0.02 195;
+    --secondary: 0.22 0.03 195;
+    --secondary-foreground: 0.92 0.01 195;
+    --muted: 0.22 0.03 195;
+    --muted-foreground: 0.58 0.015 195;
+    --accent: 0.26 0.035 195;
+    --accent-foreground: 0.92 0.01 195;
+    --destructive: 0.65 0.22 25;
+    --destructive-foreground: 0.12 0.02 195;
+    --border: 0.28 0.025 195;
+    --input: 0.28 0.025 195;
+    --ring: 0.6 0.14 195;
+    --sidebar: 0.16 0.025 195;
+    --sidebar-foreground: 0.92 0.01 195;
+    --sidebar-primary: 0.68 0.16 195;
+    --sidebar-primary-foreground: 0.12 0.02 195;
+    --sidebar-accent: 0.22 0.03 195;
+    --sidebar-accent-foreground: 0.92 0.01 195;
+    --sidebar-border: 0.28 0.025 195;
+  }
+
   * {
     @apply border-border;
   }

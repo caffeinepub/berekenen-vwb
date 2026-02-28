@@ -5,19 +5,19 @@ const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
 
 // Commodity symbol map
 export const COMMODITY_SYMBOL_MAP: Record<string, string> = {
-  "Goud": "XAU/EUR",
-  "Zilver": "XAG/EUR",
-  "Platinum": "XPT/EUR",
-  "Palladium": "XPD/EUR",
-  "Koper": "COPPER",
+  Goud: "XAU/EUR",
+  Zilver: "XAG/EUR",
+  Platinum: "XPT/EUR",
+  Palladium: "XPD/EUR",
+  Koper: "COPPER",
   "Olie (WTI)": "WTI/USD",
   "Olie (Brent)": "BRENT/USD",
-  "Aardgas": "NATGAS",
-  "Tarwe": "WHEAT",
-  "Mais": "CORN",
-  "Koffie": "COFFEE",
-  "Cacao": "COCOA",
-  "Suiker": "SUGAR",
+  Aardgas: "NATGAS",
+  Tarwe: "WHEAT",
+  Mais: "CORN",
+  Koffie: "COFFEE",
+  Cacao: "COCOA",
+  Suiker: "SUGAR",
 };
 
 // Commodities that are quoted in USD (need EUR conversion)
@@ -70,13 +70,22 @@ export function buildPriceSymbol(ticker: string, micCode?: string): string {
 /**
  * Determine the currency for a given MIC exchange code.
  */
-export function getCurrencyForExchange(micCode?: string): "EUR" | "USD" | "GBP" | "OTHER" {
+export function getCurrencyForExchange(
+  micCode?: string,
+): "EUR" | "USD" | "GBP" | "OTHER" {
   if (!micCode) return "USD"; // assume USD if unknown
   const mic = micCode.toUpperCase();
   if (US_MIC_CODES.has(mic)) return "USD";
   if (GBP_MIC_CODES.has(mic)) return "GBP";
   // European EUR exchanges
-  const EUR_MIC_CODES = new Set(["XAMS", "XPAR", "XBRU", "XLIS", "XFRA", "XETR"]);
+  const EUR_MIC_CODES = new Set([
+    "XAMS",
+    "XPAR",
+    "XBRU",
+    "XLIS",
+    "XFRA",
+    "XETR",
+  ]);
   if (EUR_MIC_CODES.has(mic)) return "EUR";
   return "OTHER";
 }
@@ -123,7 +132,10 @@ const PRIORITY_EXCHANGES = new Set([
  * Instead we filter client-side on instrument_type.
  * Results are sorted so priority exchanges (US/major markets) appear first.
  */
-export async function searchStocks(query: string, apiKey: string): Promise<StockSearchResult[]> {
+export async function searchStocks(
+  query: string,
+  apiKey: string,
+): Promise<StockSearchResult[]> {
   if (!query.trim() || !apiKey.trim()) return [];
   // outputsize=10 to limit results; no type= filter to avoid API issues
   const url = `${TWELVE_DATA_BASE}/symbol_search?symbol=${encodeURIComponent(query)}&outputsize=10&apikey=${apiKey}`;
@@ -142,12 +154,20 @@ export async function searchStocks(query: string, apiKey: string): Promise<Stock
       "depositary receipt",
     ];
     const filtered = data.filter((item) =>
-      allowedTypes.some((t) => item.instrument_type?.toLowerCase().includes(t))
+      allowedTypes.some((t) => item.instrument_type?.toLowerCase().includes(t)),
     );
     // Sort: priority exchanges first, others after — stable within each group
     return filtered.sort((a, b) => {
-      const aPriority = PRIORITY_EXCHANGES.has((a.mic_code || a.exchange || "").toUpperCase()) ? 0 : 1;
-      const bPriority = PRIORITY_EXCHANGES.has((b.mic_code || b.exchange || "").toUpperCase()) ? 0 : 1;
+      const aPriority = PRIORITY_EXCHANGES.has(
+        (a.mic_code || a.exchange || "").toUpperCase(),
+      )
+        ? 0
+        : 1;
+      const bPriority = PRIORITY_EXCHANGES.has(
+        (b.mic_code || b.exchange || "").toUpperCase(),
+      )
+        ? 0
+        : 1;
       return aPriority - bPriority;
     });
   } catch {
@@ -165,8 +185,8 @@ async function fetchUsdEurRate(apiKey: string): Promise<number | null> {
     if (!res.ok) return null;
     const json = await res.json();
     if (json.price) {
-      const p = parseFloat(json.price);
-      return isNaN(p) ? null : p;
+      const p = Number.parseFloat(json.price);
+      return Number.isNaN(p) ? null : p;
     }
     return null;
   } catch {
@@ -184,8 +204,8 @@ async function fetchGbpEurRate(apiKey: string): Promise<number | null> {
     if (!res.ok) return null;
     const json = await res.json();
     if (json.price) {
-      const p = parseFloat(json.price);
-      return isNaN(p) ? null : p;
+      const p = Number.parseFloat(json.price);
+      return Number.isNaN(p) ? null : p;
     }
     return null;
   } catch {
@@ -212,7 +232,7 @@ export async function fetchStockPrice(
   ticker: string,
   apiKey: string,
   _deprecatedCurrency?: string,
-  micCode?: string
+  micCode?: string,
 ): Promise<number | null> {
   if (!ticker || !apiKey) return null;
 
@@ -229,8 +249,8 @@ export async function fetchStockPrice(
     if (json.code || json.status === "error") return null;
 
     if (json.price) {
-      const p = parseFloat(json.price);
-      if (isNaN(p)) return null;
+      const p = Number.parseFloat(json.price);
+      if (Number.isNaN(p)) return null;
 
       const currency = getCurrencyForExchange(micCode);
 
@@ -259,7 +279,9 @@ export async function fetchStockPrice(
   }
 }
 
-export async function searchCrypto(query: string): Promise<CryptoSearchResult[]> {
+export async function searchCrypto(
+  query: string,
+): Promise<CryptoSearchResult[]> {
   if (!query.trim()) return [];
   const url = `${COINGECKO_BASE}/search?query=${encodeURIComponent(query)}`;
   try {
@@ -286,7 +308,10 @@ export async function fetchCryptoPrice(coinId: string): Promise<number | null> {
   }
 }
 
-export async function fetchCommodityPrice(commodityName: string, apiKey: string): Promise<number | null> {
+export async function fetchCommodityPrice(
+  commodityName: string,
+  apiKey: string,
+): Promise<number | null> {
   const symbol = COMMODITY_SYMBOL_MAP[commodityName];
   if (!symbol || !apiKey) return null;
   const url = `${TWELVE_DATA_BASE}/price?symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
@@ -295,8 +320,8 @@ export async function fetchCommodityPrice(commodityName: string, apiKey: string)
     if (!res.ok) return null;
     const json = await res.json();
     if (json.price) {
-      const p = parseFloat(json.price);
-      if (isNaN(p)) return null;
+      const p = Number.parseFloat(json.price);
+      if (Number.isNaN(p)) return null;
       // Convert USD-denominated commodities to EUR
       if (USD_COMMODITY_SYMBOLS.has(symbol)) {
         const usdEurRate = await fetchUsdEurRate(apiKey);

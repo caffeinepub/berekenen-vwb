@@ -1,19 +1,14 @@
-import { useState, useMemo } from "react";
-import { toast } from "sonner";
-import { AssetType, AssetView } from "../backend.d";
-import { useAddAsset } from "../hooks/useQueries";
-import { useCommodities } from "../hooks/useCommodities";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -22,6 +17,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { AssetType, type AssetView } from "../backend.d";
+import { useCommodities } from "../hooks/useCommodities";
+import { useAddAsset } from "../hooks/useQueries";
 
 // ─── Commodity definitions ────────────────────────────────────────────────────
 
@@ -117,7 +117,10 @@ const INITIAL_FORM: CommodityAssetForm = {
   currentPrice: "",
 };
 
-export function AddCommodityAssetDialog({ assets, children }: AddCommodityAssetDialogProps) {
+export function AddCommodityAssetDialog({
+  assets,
+  children,
+}: AddCommodityAssetDialogProps) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<CommodityAssetForm>(INITIAL_FORM);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -154,7 +157,7 @@ export function AddCommodityAssetDialog({ assets, children }: AddCommodityAssetD
     const name = form.commodityType;
 
     const rawPrice = form.currentPrice.trim().replace(",", ".");
-    const currentPrice = rawPrice !== "" ? parseFloat(rawPrice) : 0;
+    const currentPrice = rawPrice !== "" ? Number.parseFloat(rawPrice) : 0;
 
     setIsSubmitting(true);
     try {
@@ -163,7 +166,8 @@ export function AddCommodityAssetDialog({ assets, children }: AddCommodityAssetD
         name: `${name} (${form.unit})`,
         ticker,
         assetType: AssetType.stock,
-        currentPrice: isNaN(currentPrice) || currentPrice < 0 ? 0 : currentPrice,
+        currentPrice:
+          Number.isNaN(currentPrice) || currentPrice < 0 ? 0 : currentPrice,
       });
 
       // Mark this ticker as a commodity in localStorage
@@ -191,7 +195,9 @@ export function AddCommodityAssetDialog({ assets, children }: AddCommodityAssetD
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="font-semibold">Grondstof toevoegen</DialogTitle>
+          <DialogTitle className="font-semibold">
+            Grondstof toevoegen
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-2">
           {/* Commodity type */}
@@ -219,7 +225,11 @@ export function AddCommodityAssetDialog({ assets, children }: AddCommodityAssetD
               Eenheid <span className="text-loss">*</span>
             </Label>
             <Select
-              value={COMMODITY_UNITS.includes(form.unit as CommodityUnit) ? form.unit : "__custom__"}
+              value={
+                COMMODITY_UNITS.includes(form.unit as CommodityUnit)
+                  ? form.unit
+                  : "__custom__"
+              }
               onValueChange={(v) => {
                 if (v !== "__custom__") {
                   setForm((p) => ({ ...p, unit: v }));
@@ -249,7 +259,9 @@ export function AddCommodityAssetDialog({ assets, children }: AddCommodityAssetD
 
           {/* Current price (optional, manually entered) */}
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="commodity-price">Huidige prijs per eenheid (€)</Label>
+            <Label htmlFor="commodity-price">
+              Huidige prijs per eenheid (€)
+            </Label>
             <Input
               id="commodity-price"
               type="number"
@@ -257,17 +269,25 @@ export function AddCommodityAssetDialog({ assets, children }: AddCommodityAssetD
               min="0"
               placeholder="bijv. 2800,00"
               value={form.currentPrice}
-              onChange={(e) => setForm((p) => ({ ...p, currentPrice: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, currentPrice: e.target.value }))
+              }
               className="num"
             />
           </div>
 
           <DialogFooter className="mt-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setOpen(false)}
+            >
               Annuleren
             </Button>
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {isSubmitting && (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              )}
               Toevoegen
             </Button>
           </DialogFooter>

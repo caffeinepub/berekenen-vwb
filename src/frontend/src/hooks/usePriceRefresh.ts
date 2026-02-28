@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { AssetView } from "../backend.d";
-import { fetchStockPrice, fetchCryptoPrice } from "../utils/api";
+import type { AssetView } from "../backend.d";
+import { fetchCryptoPrice, fetchStockPrice } from "../utils/api";
 import { useUpdateAssetPrice } from "./useQueries";
 
 const STORAGE_KEY_API = "vwb_twelve_data_api_key";
@@ -36,11 +36,20 @@ export function usePriceRefresh() {
 
             if (section === "stocks") {
               // Retrieve the MIC code stored when the user selected this stock
-              const micCode = localStorage.getItem(`vwb_mic_code_${asset.ticker}`) ?? undefined;
-              price = await fetchStockPrice(asset.ticker, apiKey, undefined, micCode);
+              const micCode =
+                localStorage.getItem(`vwb_mic_code_${asset.ticker}`) ??
+                undefined;
+              price = await fetchStockPrice(
+                asset.ticker,
+                apiKey,
+                undefined,
+                micCode,
+              );
             } else if (section === "crypto") {
               // Look up CoinGecko id from localStorage
-              const coinId = localStorage.getItem(`vwb_coingecko_id_${asset.ticker}`);
+              const coinId = localStorage.getItem(
+                `vwb_coingecko_id_${asset.ticker}`,
+              );
               if (coinId) {
                 price = await fetchCryptoPrice(coinId);
               } else {
@@ -62,17 +71,17 @@ export function usePriceRefresh() {
           } catch {
             failedAssets.push(asset.ticker);
           }
-        })
+        }),
       );
 
       if (failedAssets.length > 0) {
         toast.warning(
           `Koers kon niet worden opgehaald voor: ${failedAssets.join(", ")}. Controleer de verbinding of werk de prijs handmatig bij.`,
-          { duration: 6000 }
+          { duration: 6000 },
         );
       }
     },
-    [updateAssetPrice]
+    [updateAssetPrice],
   );
 
   return { refreshPrices };

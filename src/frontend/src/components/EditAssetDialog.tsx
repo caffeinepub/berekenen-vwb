@@ -1,20 +1,15 @@
-import { useState } from "react";
-import { toast } from "sonner";
-import { AssetView, AssetType } from "../backend.d";
-import { useUpdateAsset } from "../hooks/useQueries";
-import { setEtfFlag, getEtfFlag } from "../utils/ter";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -23,6 +18,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { AssetType, type AssetView } from "../backend.d";
+import { useUpdateAsset } from "../hooks/useQueries";
+import { getEtfFlag, setEtfFlag } from "../utils/ter";
 
 // Internal form type: distinguishes ETF from regular stock
 type FormAssetType = "stock" | "etf" | "crypto";
@@ -71,7 +71,8 @@ export function EditAssetDialog({
         formType: getInitialFormType(asset),
         currentPrice: String(asset.currentPrice),
         hasOngoingCosts: ongoingCostsEnabled,
-        ter: terValue !== undefined && terValue !== null ? String(terValue) : "",
+        ter:
+          terValue !== undefined && terValue !== null ? String(terValue) : "",
       });
     }
     setOpen(isOpen);
@@ -86,22 +87,23 @@ export function EditAssetDialog({
     }
 
     const price = form.currentPrice
-      ? parseFloat(form.currentPrice.replace(",", "."))
+      ? Number.parseFloat(form.currentPrice.replace(",", "."))
       : 0;
-    if (form.currentPrice && (isNaN(price) || price < 0)) {
+    if (form.currentPrice && (Number.isNaN(price) || price < 0)) {
       toast.error("Ongeldige huidige prijs");
       return;
     }
 
     // Map form type back to backend AssetType
-    const backendType = form.formType === "crypto" ? AssetType.crypto : AssetType.stock;
+    const backendType =
+      form.formType === "crypto" ? AssetType.crypto : AssetType.stock;
 
     try {
       await updateAsset.mutateAsync({
         ticker: asset.ticker,
         name: form.name.trim(),
         assetType: backendType,
-        currentPrice: isNaN(price) ? 0 : price,
+        currentPrice: Number.isNaN(price) ? 0 : price,
       });
 
       // Persist ETF flag
@@ -111,8 +113,8 @@ export function EditAssetDialog({
         updateOngoingCosts(asset.ticker, form.hasOngoingCosts);
       }
       if (form.hasOngoingCosts && form.ter && updateTer) {
-        const terPct = parseFloat(form.ter.replace(",", "."));
-        if (!isNaN(terPct) && terPct >= 0) {
+        const terPct = Number.parseFloat(form.ter.replace(",", "."));
+        if (!Number.isNaN(terPct) && terPct >= 0) {
           updateTer(asset.ticker, terPct);
         }
       } else if (!form.hasOngoingCosts && updateTer) {
@@ -235,12 +237,18 @@ export function EditAssetDialog({
                     id="edit-asset-ongoing-costs"
                     checked={form.hasOngoingCosts}
                     onCheckedChange={(checked) =>
-                      setForm((p) => ({ ...p, hasOngoingCosts: checked === true }))
+                      setForm((p) => ({
+                        ...p,
+                        hasOngoingCosts: checked === true,
+                      }))
                     }
                     className="mt-0.5"
                   />
                   <div className="flex flex-col gap-0.5">
-                    <Label htmlFor="edit-asset-ongoing-costs" className="cursor-pointer font-medium text-sm">
+                    <Label
+                      htmlFor="edit-asset-ongoing-costs"
+                      className="cursor-pointer font-medium text-sm"
+                    >
                       Lopende kosten van toepassing
                     </Label>
                     <p className="text-xs text-muted-foreground leading-relaxed">
@@ -252,7 +260,9 @@ export function EditAssetDialog({
 
               {form.hasOngoingCosts && (
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="edit-asset-ter">TER – lopende kosten (%)</Label>
+                  <Label htmlFor="edit-asset-ter">
+                    TER – lopende kosten (%)
+                  </Label>
                   <Input
                     id="edit-asset-ter"
                     type="number"
@@ -261,11 +271,15 @@ export function EditAssetDialog({
                     max="5"
                     placeholder="bijv. 0,20"
                     value={form.ter}
-                    onChange={(e) => setForm((p) => ({ ...p, ter: e.target.value }))}
+                    onChange={(e) =>
+                      setForm((p) => ({ ...p, ter: e.target.value }))
+                    }
                     className="num"
                   />
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Voer hier de jaarlijkse lopende kosten in (TER). Dit percentage is te vinden in de documentatie van het fonds. Voorbeeld: 0,20% voor een wereldwijd indexfonds.
+                    Voer hier de jaarlijkse lopende kosten in (TER). Dit
+                    percentage is te vinden in de documentatie van het fonds.
+                    Voorbeeld: 0,20% voor een wereldwijd indexfonds.
                   </p>
                 </div>
               )}

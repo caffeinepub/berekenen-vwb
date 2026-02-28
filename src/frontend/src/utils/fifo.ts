@@ -1,4 +1,4 @@
-import { TransactionView, TransactionType } from "../backend.d";
+import { TransactionType, type TransactionView } from "../backend.d";
 
 export interface FifoResult {
   realized: number;
@@ -17,12 +17,10 @@ interface FifoLot {
 
 export function calculateFifo(
   transactions: TransactionView[],
-  currentPrice: number
+  currentPrice: number,
 ): FifoResult {
   // Sort all transactions by date ascending
-  const sorted = [...transactions].sort(
-    (a, b) => Number(a.date - b.date)
-  );
+  const sorted = [...transactions].sort((a, b) => Number(a.date - b.date));
 
   const lots: FifoLot[] = [];
   let realized = 0;
@@ -82,7 +80,7 @@ export function calculateFifo(
   const currentQuantity = lots.reduce((sum, lot) => sum + lot.quantity, 0);
   const costBasis = lots.reduce(
     (sum, lot) => sum + lot.quantity * lot.pricePerUnit + lot.fees,
-    0
+    0,
   );
   const unrealized = currentQuantity * currentPrice - costBasis;
 

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
 
 const COMMODITY_TICKERS_KEY = "vwb_commodity_tickers";
 
@@ -14,12 +14,15 @@ function getCommodityTickersFromStorage(): Set<string> {
 }
 
 function saveCommodityTickers(tickers: Set<string>): void {
-  localStorage.setItem(COMMODITY_TICKERS_KEY, JSON.stringify(Array.from(tickers)));
+  localStorage.setItem(
+    COMMODITY_TICKERS_KEY,
+    JSON.stringify(Array.from(tickers)),
+  );
 }
 
 export function useCommodities() {
   const [commodityTickers, setCommodityTickers] = useState<Set<string>>(
-    getCommodityTickersFromStorage
+    getCommodityTickersFromStorage,
   );
 
   const addCommodityTicker = useCallback((ticker: string) => {
@@ -42,8 +45,13 @@ export function useCommodities() {
 
   const isCommodity = useCallback(
     (ticker: string) => commodityTickers.has(ticker.toUpperCase()),
-    [commodityTickers]
+    [commodityTickers],
   );
 
-  return { commodityTickers, addCommodityTicker, removeCommodityTicker, isCommodity };
+  return {
+    commodityTickers,
+    addCommodityTicker,
+    removeCommodityTicker,
+    isCommodity,
+  };
 }

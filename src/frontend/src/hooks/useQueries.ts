@@ -1,6 +1,13 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  AssetType,
+  AssetView,
+  LoanStatus,
+  LoanTransactionType,
+  LoanView,
+  TransactionView,
+} from "../backend.d";
 import { useActor } from "./useActor";
-import { AssetType, AssetView, TransactionView, LoanView, LoanStatus, LoanTransactionType } from "../backend.d";
 
 // ─── Queries ────────────────────────────────────────────────────────────────
 
@@ -157,7 +164,10 @@ export function useDeleteTransaction() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ ticker, index }: { ticker: string; index: number }) => {
+    mutationFn: async ({
+      ticker,
+      index,
+    }: { ticker: string; index: number }) => {
       if (!actor) throw new Error("No actor");
       return actor.deleteTransaction(ticker, BigInt(index));
     },
@@ -232,7 +242,7 @@ export function useAddLoan() {
         interestRatePercent ?? null,
         endDate ?? null,
         durationMonths ?? null,
-        notes ?? null
+        notes ?? null,
       );
     },
     onSuccess: () => {
@@ -276,7 +286,7 @@ export function useUpdateLoan() {
         endDate ?? null,
         durationMonths ?? null,
         notes ?? null,
-        status
+        status,
       );
     },
     onSuccess: () => {
@@ -317,7 +327,13 @@ export function useAddLoanTransaction() {
       notes?: string;
     }) => {
       if (!actor) throw new Error("No actor");
-      return actor.addLoanTransaction(loanId, transactionType, date, amount, notes ?? null);
+      return actor.addLoanTransaction(
+        loanId,
+        transactionType,
+        date,
+        amount,
+        notes ?? null,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["loans"] });

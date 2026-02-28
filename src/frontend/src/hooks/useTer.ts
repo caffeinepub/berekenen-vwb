@@ -1,9 +1,17 @@
-import { useState, useCallback } from "react";
-import { getTerPercentages, setTerPercentage, getTerPercentage, getOngoingCostsFlags, setOngoingCostsFlag } from "../utils/ter";
+import { useCallback, useState } from "react";
+import {
+  getOngoingCostsFlags,
+  getTerPercentage,
+  getTerPercentages,
+  setOngoingCostsFlag,
+  setTerPercentage,
+} from "../utils/ter";
 
 export function useTer() {
-  const [terMap, setTerMap] = useState<Record<string, number>>(getTerPercentages);
-  const [ongoingCostsMap, setOngoingCostsMap] = useState<Record<string, boolean>>(getOngoingCostsFlags);
+  const [terMap, setTerMap] =
+    useState<Record<string, number>>(getTerPercentages);
+  const [ongoingCostsMap, setOngoingCostsMap] =
+    useState<Record<string, boolean>>(getOngoingCostsFlags);
 
   const updateTer = useCallback((ticker: string, pct: number | null) => {
     setTerPercentage(ticker, pct);
@@ -15,5 +23,11 @@ export function useTer() {
     setOngoingCostsMap(getOngoingCostsFlags());
   }, []);
 
-  return { terMap, updateTer, getTerForTicker: (t: string) => getTerPercentage(t), ongoingCostsMap, updateOngoingCosts };
+  return {
+    terMap,
+    updateTer,
+    getTerForTicker: (t: string) => getTerPercentage(t),
+    ongoingCostsMap,
+    updateOngoingCosts,
+  };
 }
