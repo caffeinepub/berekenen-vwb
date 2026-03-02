@@ -10,7 +10,14 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import { ChevronDown, ChevronRight, Inbox, Pencil, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  Inbox,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
@@ -21,6 +28,7 @@ import {
 } from "../backend.d";
 import { useDeleteTransaction } from "../hooks/useQueries";
 import { formatDate, formatEuro, formatQuantity } from "../utils/format";
+import { AddTransactionDialog } from "./AddTransactionDialog";
 import { TransactionTypeBadge } from "./AssetBadge";
 import { EditTransactionDialog } from "./EditTransactionDialog";
 import { ReturnValue } from "./MoneyValue";
@@ -163,6 +171,8 @@ export function TransactionHistory({
   isCommodity = false,
 }: TransactionHistoryProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const [prefillTx, setPrefillTx] = useState<TransactionView | null>(null);
+  const [prefillOpen, setPrefillOpen] = useState(false);
   const isCrypto = assetType === AssetType.crypto;
   const transactions = asset.transactions;
 
@@ -255,6 +265,17 @@ export function TransactionHistory({
                     </td>
                     <td className="py-2.5 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover:opacity-100"
+                          title="Dupliceren"
+                          onClick={() => {
+                            setPrefillTx(transactions[tx.originalIndex]);
+                            setPrefillOpen(true);
+                          }}
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
                         <EditTransactionDialog
                           asset={asset}
                           transactionIndex={tx.originalIndex}
@@ -281,6 +302,21 @@ export function TransactionHistory({
             </table>
           )}
         </div>
+      )}
+
+      {/* Duplicate dialog — controlled externally */}
+      {prefillTx && (
+        <AddTransactionDialog
+          assets={[asset]}
+          defaultTicker={asset.ticker}
+          prefill={{ ...prefillTx, ticker: asset.ticker }}
+          open={prefillOpen}
+          onOpenChange={(v) => {
+            setPrefillOpen(v);
+            if (!v) setPrefillTx(null);
+          }}
+          commodityTickers={isCommodity ? new Set([asset.ticker]) : undefined}
+        />
       )}
     </div>
   );

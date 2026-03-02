@@ -12,30 +12,31 @@ import { useActor } from "./useActor";
 // ─── Queries ────────────────────────────────────────────────────────────────
 
 export function useAllAssets() {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
   return useQuery<AssetView[]>({
     queryKey: ["assets"],
     queryFn: async () => {
       if (!actor) return [];
       return actor.getAllAssets();
     },
-    enabled: !!actor && !isFetching,
-    staleTime: 0,
-    gcTime: 0,
+    enabled: !!actor,
+    staleTime: 30_000,
+    gcTime: 300_000,
+    refetchOnMount: false,
   });
 }
 
 export function useAsset(ticker: string) {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
   return useQuery<AssetView>({
     queryKey: ["asset", ticker],
     queryFn: async () => {
       if (!actor) throw new Error("No actor");
       return actor.getAsset(ticker);
     },
-    enabled: !!actor && !isFetching && !!ticker,
-    staleTime: 0,
-    gcTime: 0,
+    enabled: !!actor && !!ticker,
+    staleTime: 30_000,
+    gcTime: 300_000,
   });
 }
 
@@ -206,16 +207,17 @@ export function useUpdateTransaction() {
 // ─── Loans ───────────────────────────────────────────────────────────────────
 
 export function useAllLoans() {
-  const { actor, isFetching } = useActor();
+  const { actor } = useActor();
   return useQuery<LoanView[]>({
     queryKey: ["loans"],
     queryFn: async () => {
       if (!actor) return [];
       return actor.getAllLoans();
     },
-    enabled: !!actor && !isFetching,
-    staleTime: 0,
-    gcTime: 0,
+    enabled: !!actor,
+    staleTime: 30_000,
+    gcTime: 300_000,
+    refetchOnMount: false,
   });
 }
 

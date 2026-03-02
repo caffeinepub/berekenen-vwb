@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { AssetType, type AssetView, type LoanView } from "../backend.d";
@@ -67,11 +68,13 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
   const [userName, setUserNameState] = useState<string>("");
+  // Track which principal's name we've already loaded to avoid re-fetching
+  const loadedNameForPrincipal = useRef<string | null>(null);
 
   const { data: assets = [], isLoading, refetch, isFetching } = useAllAssets();
   const { data: loans = [] } = useAllLoans();
   const { refreshPrices } = usePriceRefresh();
-  const { actor, isFetching: isActorFetching } = useActor();
+  const { actor } = useActor();
 
   // ─── User settings — now backed by the canister ──────────────────────────
   const {
@@ -92,11 +95,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   // ─── Actor readiness — derived, not state ─────────────────────────────────
-  const isActorReady = !!actor && !isActorFetching;
+  const isActorReady = !!actor;
 
   // ─── User name ─────────────────────────────────────────────────────────────
+  // Only fetch the user name once per principal to avoid re-fetch loops
   useEffect(() => {
     if (!actor) return;
+
+    // Derive a stable key for this actor instance (principal string)
+    const principalKey =
+      (actor as { getPrincipal?: () => { toString: () => string } })
+        .getPrincipal?.()
+        .toString() ?? "unknown";
+
+    // Skip if we already loaded the name for this principal
+    if (loadedNameForPrincipal.current === principalKey) return;
+    loadedNameForPrincipal.current = principalKey;
+
     actor
       .getUserName()
       .then((name) => {

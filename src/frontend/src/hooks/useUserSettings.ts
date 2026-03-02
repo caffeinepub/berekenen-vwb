@@ -3,6 +3,22 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { UserSettingsView } from "../backend.d";
 import { useActor } from "./useActor";
 
+// Debounce helper: returns a function that delays calling fn by `ms` milliseconds.
+// Rapid successive calls cancel and restart the timer so only the last call fires.
+function debounce<T extends unknown[]>(
+  fn: (...args: T) => void,
+  ms: number,
+): (...args: T) => void {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return (...args: T) => {
+    if (timer !== null) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      fn(...args);
+    }, ms);
+  };
+}
+
 // ─── localStorage keys (used only as write-through cache) ─────────────────────
 const TER_KEY = "vwb_ter_percentages";
 const ONGOING_COSTS_KEY = "vwb_ongoing_costs_flags";
@@ -100,13 +116,22 @@ function hasBackendData(settings: UserSettingsView): boolean {
   );
 }
 
+// Persistent migration flag — survives re-mounts (stored in module scope)
+const MIGRATION_DONE_KEY = "vwb_migration_done_v1";
+function isMigrationPersistentlyDone(): boolean {
+  return localStorage.getItem(MIGRATION_DONE_KEY) === "1";
+}
+function markMigrationPersistentlyDone(): void {
+  localStorage.setItem(MIGRATION_DONE_KEY, "1");
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 export function useUserSettings() {
-  const { actor, isFetching: isActorFetching } = useActor();
+  const { actor } = useActor();
   const queryClient = useQueryClient();
 
-  // One-time migration flag
-  const migrationDone = useRef(false);
+  // One-time migration flag (also backed by localStorage so it survives re-mounts)
+  const migrationDone = useRef(isMigrationPersistentlyDone());
   // Track if we have applied backend data (to avoid applying empty backend data
   // over valid local state on first load)
   const backendApplied = useRef(false);
@@ -122,20 +147,25 @@ export function useUserSettings() {
   const [twelveDataApiKey, setTwelveDataApiKeyState] =
     useState<string>(readLocalApiKey);
 
-  // ─── Backend query — always re-fetch after actor changes ──────────────────
-  // Use actor principal as part of queryKey so switching users forces a new fetch
-  const actorPrincipal = actor ? "authenticated" : "anonymous";
+  // ─── Backend query — simple stable key based on auth state ──────────────────
+  // Using a simple "authenticated" key avoids key instability when the actor
+  // object changes between renders while staying the same user session.
+  const principalKey = actor ? "authenticated" : "anonymous";
   const { data: backendSettings, isLoading } = useQuery<UserSettingsView>({
-    queryKey: ["userSettings", actorPrincipal],
+    queryKey: ["userSettings", principalKey],
     queryFn: async () => {
       if (!actor) throw new Error("No actor");
       return actor.getUserSettings();
     },
-    enabled: !!actor && !isActorFetching,
-    staleTime: 0, // Always treat as stale so it refetches after login
-    gcTime: 0, // Don't cache between sessions
-    retry: 3,
-    retryDelay: 1000,
+    // Only fetch when we have a real authenticated actor (not anonymous)
+    enabled: !!actor && principalKey !== "anonymous",
+    staleTime: 60_000,
+    gcTime: 300_000,
+    retry: 1,
+    retryDelay: 2000,
+    // Never refetch on mount or window focus — settings don't change externally
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
   });
 
   // ─── Save mutation ─────────────────────────────────────────────────────────
@@ -154,13 +184,15 @@ export function useUserSettings() {
   useEffect(() => {
     if (!backendSettings) return;
 
-    // One-time migration: if backend is empty but localStorage has data, push it up
+    // One-time migration: if backend is empty but localStorage has data, push it up.
+    // The flag is stored persistently in localStorage so the migration never runs twice.
     if (
       !hasBackendData(backendSettings) &&
       !migrationDone.current &&
       hasLocalData()
     ) {
       migrationDone.current = true;
+      markMigrationPersistentlyDone();
       const localOngoing = mergeEtfFlags(readLocalOngoingCostsMap());
       const payload: UserSettingsView = {
         terEntries: Object.entries(readLocalTerMap()),
@@ -168,6 +200,7 @@ export function useUserSettings() {
         commodityTickers: readLocalCommodityTickers(),
         ongoingCostsEntries: Object.entries(localOngoing),
       };
+      // Only call saveMutation in the migration path
       saveMutation.mutate(payload);
       // Apply local data to state
       setTerMap(readLocalTerMap());
@@ -179,12 +212,31 @@ export function useUserSettings() {
     }
 
     // Normal case: apply backend data (backend is always the source of truth after login)
+    // Skip re-applying if backend data hasn't changed since last apply — prevents
+    // unnecessary state updates during a refetch storm triggered by useActor.ts
     const newTerMap = Object.fromEntries(backendSettings.terEntries);
     const newOngoingCostsMap = Object.fromEntries(
       backendSettings.ongoingCostsEntries,
     );
     const newCommodityTickers = backendSettings.commodityTickers;
     const newApiKey = backendSettings.twelveDataApiKey;
+
+    if (backendApplied.current) {
+      // Already applied once — only update if data meaningfully changed
+      const currentSnapshot = JSON.stringify({
+        terMap: terMapRef.current,
+        ongoingCostsMap: ongoingCostsMapRef.current,
+        commodityTickers: commodityTickersRef.current,
+        twelveDataApiKey: twelveDataApiKeyRef.current,
+      });
+      const newSnapshot = JSON.stringify({
+        terMap: newTerMap,
+        ongoingCostsMap: newOngoingCostsMap,
+        commodityTickers: newCommodityTickers,
+        twelveDataApiKey: newApiKey,
+      });
+      if (currentSnapshot === newSnapshot) return;
+    }
 
     setTerMap(newTerMap);
     setOngoingCostsMap(newOngoingCostsMap);
@@ -243,6 +295,14 @@ export function useUserSettings() {
     [],
   );
 
+  // ─── Debounced save — batches rapid changes into a single backend write ──────
+  // The ref keeps the debounced function stable across renders.
+  const debouncedSaveRef = useRef(
+    debounce((payload: UserSettingsView) => {
+      saveMutation.mutate(payload);
+    }, 300),
+  );
+
   // ─── Update functions ──────────────────────────────────────────────────────
   const updateTerMap = useCallback(
     (ticker: string, pct: number | null) => {
@@ -254,11 +314,11 @@ export function useUserSettings() {
           next[ticker] = pct;
         }
         localStorage.setItem(TER_KEY, JSON.stringify(next));
-        saveMutation.mutate(buildPayload({ terMap: next }));
+        debouncedSaveRef.current(buildPayload({ terMap: next }));
         return next;
       });
     },
-    [buildPayload, saveMutation],
+    [buildPayload],
   );
 
   const updateOngoingCostsMap = useCallback(
@@ -271,29 +331,29 @@ export function useUserSettings() {
           next[ticker] = true;
         }
         localStorage.setItem(ONGOING_COSTS_KEY, JSON.stringify(next));
-        saveMutation.mutate(buildPayload({ ongoingCostsMap: next }));
+        debouncedSaveRef.current(buildPayload({ ongoingCostsMap: next }));
         return next;
       });
     },
-    [buildPayload, saveMutation],
+    [buildPayload],
   );
 
   const updateCommodityTickers = useCallback(
     (tickers: string[]) => {
       setCommodityTickers(tickers);
       localStorage.setItem(COMMODITY_TICKERS_KEY, JSON.stringify(tickers));
-      saveMutation.mutate(buildPayload({ commodityTickers: tickers }));
+      debouncedSaveRef.current(buildPayload({ commodityTickers: tickers }));
     },
-    [buildPayload, saveMutation],
+    [buildPayload],
   );
 
   const updateTwelveDataApiKey = useCallback(
     (key: string) => {
       setTwelveDataApiKeyState(key);
       localStorage.setItem(API_KEY_STORAGE, key);
-      saveMutation.mutate(buildPayload({ twelveDataApiKey: key }));
+      debouncedSaveRef.current(buildPayload({ twelveDataApiKey: key }));
     },
-    [buildPayload, saveMutation],
+    [buildPayload],
   );
 
   return {

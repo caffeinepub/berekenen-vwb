@@ -233,6 +233,73 @@ export function computeYearStats(
   };
 }
 
+/**
+ * Compute the total portfolio wealth at a given date.
+ * For assets: FIFO remaining quantity × asset.currentPrice (best approximation).
+ * For loans: outstanding amount = loanedAmount minus total repayments received up to the date.
+ */
+export function computeWealthAtDate(
+  assets: AssetView[],
+  loans: LoanView[],
+  date: Date,
+): number {
+  const dateCutoff = date.getTime();
+  let total = 0;
+
+  for (const asset of assets) {
+    // Run FIFO on transactions up to (and including) the given date
+    const txUpToDate = asset.transactions.filter((tx) => {
+      const txMs = Number(tx.date / 1_000_000n);
+      return txMs <= dateCutoff;
+    });
+
+    interface Lot {
+      quantity: number;
+    }
+    const lots: Lot[] = [];
+    const sorted = [...txUpToDate].sort((a, b) => Number(a.date - b.date));
+
+    for (const tx of sorted) {
+      if (tx.transactionType === TransactionType.buy) {
+        lots.push({ quantity: tx.quantity });
+      } else if (tx.transactionType === TransactionType.sell) {
+        let remaining = tx.quantity;
+        while (remaining > 0 && lots.length > 0) {
+          const lot = lots[0];
+          if (lot.quantity <= remaining) {
+            remaining -= lot.quantity;
+            lots.shift();
+          } else {
+            lot.quantity -= remaining;
+            remaining = 0;
+          }
+        }
+      } else if (tx.transactionType === TransactionType.stakingReward) {
+        lots.push({ quantity: tx.quantity });
+      }
+    }
+
+    const qty = lots.reduce((s, l) => s + l.quantity, 0);
+    total += qty * asset.currentPrice;
+  }
+
+  for (const loan of loans) {
+    let outstanding = loan.loanedAmount;
+    for (const tx of loan.transactions) {
+      const txMs = Number(tx.date / 1_000_000n);
+      if (
+        txMs <= dateCutoff &&
+        tx.transactionType === LoanTransactionType.repaymentReceived
+      ) {
+        outstanding -= tx.amount;
+      }
+    }
+    total += Math.max(0, outstanding);
+  }
+
+  return total;
+}
+
 export function getYearTransactions(
   assets: AssetView[],
   year: number,

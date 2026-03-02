@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
-  BarChart3,
   Calendar,
   Coins,
   FileSpreadsheet,
@@ -26,6 +25,7 @@ import {
   Landmark,
   Percent,
   Receipt,
+  Scale,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -44,7 +44,11 @@ import {
   formatPercent,
   formatQuantity,
 } from "../utils/format";
-import { computeYearStats, getYearTransactions } from "../utils/yearStats";
+import {
+  computeWealthAtDate,
+  computeYearStats,
+  getYearTransactions,
+} from "../utils/yearStats";
 import { TransactionTypeBadge } from "./AssetBadge";
 import { MoneyValue, ReturnValue } from "./MoneyValue";
 
@@ -102,6 +106,16 @@ export function YearOverview({
   const yearTxs = useMemo(
     () => getYearTransactions(assets, selectedYear),
     [assets, selectedYear],
+  );
+
+  const beginstand = useMemo(
+    () => computeWealthAtDate(assets, loans, new Date(selectedYear, 0, 1)),
+    [assets, loans, selectedYear],
+  );
+
+  const eindstand = useMemo(
+    () => computeWealthAtDate(assets, loans, new Date(selectedYear, 11, 31)),
+    [assets, loans, selectedYear],
   );
 
   const hasTxTerCosts = stats.txTerCosts > 0;
@@ -181,17 +195,7 @@ export function YearOverview({
           }
         />
         <StatCard
-          label="Verkopen"
-          icon={<BarChart3 className="w-4 h-4" />}
-          value={
-            <MoneyValue
-              amount={stats.totalSales}
-              className="text-lg font-semibold"
-            />
-          }
-        />
-        <StatCard
-          label="Gerealiseerd"
+          label="Gerealiseerde winsten"
           icon={<TrendingUp className="w-4 h-4" />}
           value={
             <ReturnValue
@@ -201,7 +205,7 @@ export function YearOverview({
           }
         />
         <StatCard
-          label="Ongerealiseerd"
+          label="Ongerealiseerde winsten"
           icon={<TrendingUp className="w-4 h-4" />}
           value={
             <ReturnValue
@@ -309,6 +313,24 @@ export function YearOverview({
             }
           />
         )}
+      </div>
+
+      {/* Begin- en eindstand vermogen */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard
+          label={`Beginstand vermogen 01-01-${selectedYear}`}
+          icon={<Scale className="w-4 h-4" />}
+          value={
+            <MoneyValue amount={beginstand} className="text-lg font-semibold" />
+          }
+        />
+        <StatCard
+          label={`Eindstand vermogen 31-12-${selectedYear}`}
+          icon={<Scale className="w-4 h-4" />}
+          value={
+            <MoneyValue amount={eindstand} className="text-lg font-semibold" />
+          }
+        />
       </div>
 
       {yearTxs.length === 0 ? (

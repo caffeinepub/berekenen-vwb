@@ -27,6 +27,7 @@ import { MobileNav } from "./components/layout/MobileNav";
 import { Sidebar } from "./components/layout/Sidebar";
 import { AppProvider, useAppContext } from "./context/AppContext";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
+import { useRecurringTransactions } from "./hooks/useRecurringTransactions";
 import { calculateFifo } from "./utils/fifo";
 
 function AppContent() {
@@ -49,6 +50,9 @@ function AppContent() {
     setUserName,
     isActorReady,
   } = useAppContext();
+
+  // Auto-execute pending recurring transactions on startup
+  useRecurringTransactions();
 
   // Show onboarding if actor is ready but no name set yet
   const showOnboarding = isActorReady && userName.trim() === "";

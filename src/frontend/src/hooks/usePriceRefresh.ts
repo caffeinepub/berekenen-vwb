@@ -1,7 +1,11 @@
 import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import type { AssetView } from "../backend.d";
-import { fetchCryptoPrice, fetchStockPrice } from "../utils/api";
+import {
+  fetchCryptoPrice,
+  fetchStockPrice,
+  resolveCoinGeckoId,
+} from "../utils/api";
 import { useUpdateAssetPrice } from "./useQueries";
 
 const STORAGE_KEY_API = "vwb_twelve_data_api_key";
@@ -46,15 +50,12 @@ export function usePriceRefresh() {
                 micCode,
               );
             } else if (section === "crypto") {
-              // Look up CoinGecko id from localStorage
-              const coinId = localStorage.getItem(
-                `vwb_coingecko_id_${asset.ticker}`,
-              );
+              // Resolve CoinGecko ID: checks localStorage cache first, then
+              // automatically searches CoinGecko if not found (handles new sessions
+              // or different devices where localStorage is empty)
+              const coinId = await resolveCoinGeckoId(asset.ticker, asset.name);
               if (coinId) {
                 price = await fetchCryptoPrice(coinId);
-              } else {
-                // Fallback: try the ticker lowercased as coinId
-                price = await fetchCryptoPrice(asset.ticker.toLowerCase());
               }
             }
 

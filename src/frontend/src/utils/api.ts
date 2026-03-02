@@ -308,6 +308,60 @@ export async function fetchCryptoPrice(coinId: string): Promise<number | null> {
   }
 }
 
+/**
+ * Resolve the CoinGecko coin ID for a given ticker or name.
+ * First checks localStorage cache, then falls back to the CoinGecko search API.
+ * Saves the resolved ID to localStorage for future use.
+ * Returns null if the coin cannot be found.
+ */
+export async function resolveCoinGeckoId(
+  ticker: string,
+  name?: string,
+): Promise<string | null> {
+  const storageKey = `vwb_coingecko_id_${ticker.toUpperCase()}`;
+
+  // 1. Check localStorage cache first
+  const cached = localStorage.getItem(storageKey);
+  if (cached) return cached;
+
+  // 2. Try ticker as-is (many major coins match: bitcoin, ethereum, etc.)
+  const tickerLower = ticker.toLowerCase();
+  const directPrice = await fetchCryptoPrice(tickerLower);
+  if (directPrice !== null) {
+    localStorage.setItem(storageKey, tickerLower);
+    return tickerLower;
+  }
+
+  // 3. Search by ticker via CoinGecko API
+  const searchQuery = name?.trim() ? name.trim() : ticker;
+  const results = await searchCrypto(searchQuery);
+
+  if (results.length > 0) {
+    // Prefer exact ticker match first
+    const exactMatch = results.find(
+      (r) => r.symbol.toUpperCase() === ticker.toUpperCase(),
+    );
+    const best = exactMatch ?? results[0];
+    localStorage.setItem(storageKey, best.id);
+    return best.id;
+  }
+
+  // 4. Try ticker as search query if name search yielded nothing
+  if (name && name.trim() !== ticker) {
+    const tickerResults = await searchCrypto(ticker);
+    if (tickerResults.length > 0) {
+      const exactMatch = tickerResults.find(
+        (r) => r.symbol.toUpperCase() === ticker.toUpperCase(),
+      );
+      const best = exactMatch ?? tickerResults[0];
+      localStorage.setItem(storageKey, best.id);
+      return best.id;
+    }
+  }
+
+  return null;
+}
+
 export async function fetchCommodityPrice(
   commodityName: string,
   apiKey: string,
