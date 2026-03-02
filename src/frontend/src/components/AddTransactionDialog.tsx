@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-import { AlertCircle, Loader2, Plus, RepeatIcon } from "lucide-react";
+import { AlertCircle, Loader2, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -36,22 +35,6 @@ import {
   formatQuantity,
   todayInputValue,
 } from "../utils/format";
-
-export interface RecurringAssetSchedule {
-  id: string;
-  ticker: string;
-  transactionType: TransactionType;
-  quantity: number;
-  pricePerUnit: number;
-  fees?: number;
-  notes?: string;
-  euroValue?: number;
-  stakingEuroValue?: number;
-  startDate: string; // ISO date "YYYY-MM-DD"
-  endDate: string; // ISO date "YYYY-MM-DD"
-  frequency: "daily" | "weekly" | "monthly";
-  lastExecuted?: string;
-}
 
 interface AddTransactionDialogProps {
   assets: AssetView[];
@@ -76,13 +59,6 @@ const INITIAL_FORM = {
   notes: "",
   euroValue: "",
   stakingEuroValue: "",
-};
-
-const INITIAL_RECURRING = {
-  enabled: false,
-  startDate: todayInputValue(),
-  endDate: "",
-  frequency: "monthly" as "daily" | "weekly" | "monthly",
 };
 
 function buildFormFromPrefill(
@@ -129,7 +105,6 @@ export function AddTransactionDialog({
     ...INITIAL_FORM,
     ticker: defaultTicker ?? "",
   });
-  const [recurring, setRecurring] = useState(INITIAL_RECURRING);
 
   const addTransaction = useAddTransaction();
   // Track whether the sell price was auto-filled (so manual edits are preserved)
@@ -142,7 +117,6 @@ export function AddTransactionDialog({
       } else {
         setForm({ ...INITIAL_FORM, ticker: defaultTicker ?? "" });
       }
-      setRecurring({ ...INITIAL_RECURRING, startDate: todayInputValue() });
       sellPriceAutoFilled.current = false;
     }
   }, [open, defaultTicker, prefill]);
@@ -186,35 +160,6 @@ export function AddTransactionDialog({
     !Number.isNaN(quantity) &&
     quantity > availableBalance;
 
-  const saveRecurringSchedule = (
-    ticker: string,
-    qty: number,
-    price: number,
-    fees: number | undefined,
-    euroValue: number | undefined,
-    stakingEuro: number | undefined,
-  ) => {
-    const key = "portfolioflow_recurring_assets";
-    const existing: RecurringAssetSchedule[] = JSON.parse(
-      localStorage.getItem(key) ?? "[]",
-    );
-    const schedule: RecurringAssetSchedule = {
-      id: Date.now().toString(),
-      ticker,
-      transactionType: form.transactionType,
-      quantity: qty,
-      pricePerUnit: price,
-      fees,
-      notes: form.notes.trim() || undefined,
-      euroValue,
-      stakingEuroValue: stakingEuro,
-      startDate: recurring.startDate,
-      endDate: recurring.endDate,
-      frequency: recurring.frequency,
-    };
-    localStorage.setItem(key, JSON.stringify([...existing, schedule]));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -245,19 +190,7 @@ export function AddTransactionDialog({
           euroValue: parsedEuroValue,
           notes: form.notes.trim() || undefined,
         });
-        if (recurring.enabled && recurring.endDate) {
-          saveRecurringSchedule(
-            form.ticker,
-            0,
-            0,
-            undefined,
-            parsedEuroValue,
-            undefined,
-          );
-          toast.success("Dividend toegevoegd en herhaling ingesteld");
-        } else {
-          toast.success("Dividend toegevoegd");
-        }
+        toast.success("Dividend toegevoegd");
         setOpen(false);
       } catch {
         toast.error("Fout bij het toevoegen van dividend");
@@ -305,12 +238,6 @@ export function AddTransactionDialog({
       stakingEuro = parsed;
     }
 
-    // Validate recurring fields if enabled
-    if (recurring.enabled && !recurring.endDate) {
-      toast.error("Vul een einddatum in voor de herhaling");
-      return;
-    }
-
     const dateObj = dateInputToDate(form.date);
     const dateBigint = dateToBigintNano(dateObj);
 
@@ -326,19 +253,7 @@ export function AddTransactionDialog({
         notes: form.notes.trim() || undefined,
       });
 
-      if (recurring.enabled && recurring.endDate) {
-        saveRecurringSchedule(
-          form.ticker,
-          qty,
-          isStaking ? 0 : price,
-          fees,
-          undefined,
-          stakingEuro,
-        );
-        toast.success("Transactie toegevoegd en herhaling ingesteld");
-      } else {
-        toast.success("Transactie toegevoegd");
-      }
+      toast.success("Transactie toegevoegd");
       setOpen(false);
     } catch {
       toast.error("Fout bij het toevoegen van transactie");
@@ -579,78 +494,6 @@ export function AddTransactionDialog({
               rows={2}
               className="resize-none"
             />
-          </div>
-
-          {/* Recurring transaction section */}
-          <div className="border border-border rounded-lg p-3 flex flex-col gap-3">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="tx-recurring"
-                checked={recurring.enabled}
-                onCheckedChange={(checked) =>
-                  setRecurring((p) => ({ ...p, enabled: !!checked }))
-                }
-              />
-              <Label
-                htmlFor="tx-recurring"
-                className="flex items-center gap-1.5 cursor-pointer font-medium"
-              >
-                <RepeatIcon className="w-3.5 h-3.5 text-muted-foreground" />
-                Stel herhaling in
-              </Label>
-            </div>
-
-            {recurring.enabled && (
-              <div className="flex flex-col gap-3 pl-1">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="tx-rec-start">Startdatum</Label>
-                  <Input
-                    id="tx-rec-start"
-                    type="date"
-                    value={recurring.startDate}
-                    onChange={(e) =>
-                      setRecurring((p) => ({ ...p, startDate: e.target.value }))
-                    }
-                    required={recurring.enabled}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="tx-rec-end">
-                    Einddatum <span className="text-loss">*</span>
-                  </Label>
-                  <Input
-                    id="tx-rec-end"
-                    type="date"
-                    value={recurring.endDate}
-                    onChange={(e) =>
-                      setRecurring((p) => ({ ...p, endDate: e.target.value }))
-                    }
-                    required={recurring.enabled}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="tx-rec-freq">Frequentie</Label>
-                  <Select
-                    value={recurring.frequency}
-                    onValueChange={(v) =>
-                      setRecurring((p) => ({
-                        ...p,
-                        frequency: v as "daily" | "weekly" | "monthly",
-                      }))
-                    }
-                  >
-                    <SelectTrigger id="tx-rec-freq">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="daily">Dagelijks</SelectItem>
-                      <SelectItem value="weekly">Wekelijks</SelectItem>
-                      <SelectItem value="monthly">Maandelijks</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            )}
           </div>
 
           <DialogFooter className="mt-2">

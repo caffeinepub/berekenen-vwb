@@ -10,10 +10,12 @@ import {
   Wallet,
 } from "lucide-react";
 import { useAllLoans } from "../hooks/useQueries";
+import { useRecurringLoanTransactions } from "../hooks/useRecurringLoanTransactions";
 import { formatEuro } from "../utils/format";
 import { loanOutstanding, loanTotalInterest } from "../utils/loanHelpers";
 import { AddLoanDialog } from "./loans/AddLoanDialog";
 import { LoanCard } from "./loans/LoanCard";
+import { RecurringSchedulesOverview } from "./loans/RecurringSchedulesOverview";
 
 interface StatCardProps {
   label: string;
@@ -37,6 +39,7 @@ function StatCard({ label, value, icon }: StatCardProps) {
 
 export function LoansPage() {
   const { data: loans = [], isLoading } = useAllLoans();
+  useRecurringLoanTransactions(loans);
 
   const totalLoaned = loans.reduce((s, l) => s + l.loanedAmount, 0);
   const totalOutstanding = loans.reduce((s, l) => s + loanOutstanding(l), 0);
@@ -141,6 +144,8 @@ export function LoansPage() {
           ))}
         </div>
       )}
+
+      <RecurringSchedulesOverview />
     </div>
   );
 }
