@@ -78,6 +78,7 @@ export enum LoanTransactionType {
 }
 export enum TransactionType {
     buy = "buy",
+    ongoingCosts = "ongoingCosts",
     dividend = "dividend",
     sell = "sell",
     stakingReward = "stakingReward"

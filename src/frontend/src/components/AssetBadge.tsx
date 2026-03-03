@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
-import { AssetType, type TransactionType } from "../backend.d";
-import { isOngoingCostsType } from "../utils/transactionTypes";
+import { AssetType, TransactionType } from "../backend.d";
 
 interface AssetBadgeProps {
   assetType: AssetType;
@@ -87,26 +86,27 @@ export function TransactionTypeBadge({
   type,
   className,
 }: TransactionTypeBadgeProps) {
-  // Handle ongoingCosts separately since it's not in the backend.d.ts enum
-  if (isOngoingCostsType(type)) {
-    return (
-      <span
-        className={cn(
-          "ticker-chip",
-          "bg-orange-500/15 text-orange-600 dark:text-orange-400",
-          className,
-        )}
-      >
-        Lopende kosten
-      </span>
-    );
-  }
-
   const config: Record<TransactionType, { label: string; classes: string }> = {
-    buy: { label: "Aankoop", classes: "bg-gain/15 text-gain" },
-    sell: { label: "Verkoop", classes: "bg-loss/15 text-loss" },
-    stakingReward: { label: "Staking", classes: "bg-chart-1/15 text-chart-1" },
-    dividend: { label: "Dividend", classes: "bg-chart-4/15 text-chart-4" },
+    [TransactionType.buy]: {
+      label: "Aankoop",
+      classes: "bg-gain/15 text-gain",
+    },
+    [TransactionType.sell]: {
+      label: "Verkoop",
+      classes: "bg-loss/15 text-loss",
+    },
+    [TransactionType.stakingReward]: {
+      label: "Staking",
+      classes: "bg-chart-1/15 text-chart-1",
+    },
+    [TransactionType.dividend]: {
+      label: "Dividend",
+      classes: "bg-chart-4/15 text-chart-4",
+    },
+    [TransactionType.ongoingCosts]: {
+      label: "Lopende kosten",
+      classes: "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+    },
   };
   const entry = config[type] ?? {
     label: String(type),

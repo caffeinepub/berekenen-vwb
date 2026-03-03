@@ -9,11 +9,11 @@ import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
 import MixinAuthorization "authorization/MixinAuthorization";
+import Migration "migration";
 import AccessControl "authorization/access-control";
 
-
 // Specify the data migration function in with-clause
-
+(with migration = Migration.run)
 actor {
   // Public type definitions
   type AssetType = {
@@ -26,6 +26,7 @@ actor {
     #sell;
     #stakingReward;
     #dividend;
+    #ongoingCosts;
   };
 
   type LoanTransactionType = {
@@ -523,7 +524,7 @@ actor {
         };
 
         let filteredTransactions = Array.tabulate(
-          transactionsArray.size() - 1,
+          if (transactionsArray.size() == 0) { 0 } else { transactionsArray.size() - 1 : Nat },
           func(i) {
             if (i < index) { transactionsArray[i] } else { transactionsArray[i + 1] };
           },

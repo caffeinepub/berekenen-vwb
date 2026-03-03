@@ -19,6 +19,7 @@ export const LoanTransactionType = IDL.Variant({
 });
 export const TransactionType = IDL.Variant({
   'buy' : IDL.Null,
+  'ongoingCosts' : IDL.Null,
   'dividend' : IDL.Null,
   'sell' : IDL.Null,
   'stakingReward' : IDL.Null,
@@ -181,6 +182,7 @@ export const idlFactory = ({ IDL }) => {
   });
   const TransactionType = IDL.Variant({
     'buy' : IDL.Null,
+    'ongoingCosts' : IDL.Null,
     'dividend' : IDL.Null,
     'sell' : IDL.Null,
     'stakingReward' : IDL.Null,

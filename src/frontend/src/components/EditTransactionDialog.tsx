@@ -320,7 +320,7 @@ export function EditTransactionDialog({
                   </SelectItem>
                 )}
                 {showOngoingCostsOption && (
-                  <SelectItem value={TX_ONGOING_COSTS as unknown as string}>
+                  <SelectItem value={TX_ONGOING_COSTS}>
                     Lopende kosten
                   </SelectItem>
                 )}

@@ -160,6 +160,7 @@ export enum LoanTransactionType {
 }
 export enum TransactionType {
     buy = "buy",
+    ongoingCosts = "ongoingCosts",
     dividend = "dividend",
     sell = "sell",
     stakingReward = "stakingReward"
@@ -794,13 +795,15 @@ function from_candid_variant_n19(_uploadFile: (file: ExternalBlob) => Promise<Ui
 function from_candid_variant_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     buy: null;
 } | {
+    ongoingCosts: null;
+} | {
     dividend: null;
 } | {
     sell: null;
 } | {
     stakingReward: null;
 }): TransactionType {
-    return "buy" in value ? TransactionType.buy : "dividend" in value ? TransactionType.dividend : "sell" in value ? TransactionType.sell : "stakingReward" in value ? TransactionType.stakingReward : value;
+    return "buy" in value ? TransactionType.buy : "ongoingCosts" in value ? TransactionType.ongoingCosts : "dividend" in value ? TransactionType.dividend : "sell" in value ? TransactionType.sell : "stakingReward" in value ? TransactionType.stakingReward : value;
 }
 function from_candid_variant_n32(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     repaid: null;
@@ -905,6 +908,8 @@ function to_candid_record_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8
 function to_candid_variant_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: TransactionType): {
     buy: null;
 } | {
+    ongoingCosts: null;
+} | {
     dividend: null;
 } | {
     sell: null;
@@ -913,6 +918,8 @@ function to_candid_variant_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint
 } {
     return value == TransactionType.buy ? {
         buy: null
+    } : value == TransactionType.ongoingCosts ? {
+        ongoingCosts: null
     } : value == TransactionType.dividend ? {
         dividend: null
     } : value == TransactionType.sell ? {

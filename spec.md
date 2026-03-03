@@ -1,52 +1,28 @@
 # PortfolioFlow
 
 ## Current State
-
-In het tabblad Aandelen (AssetsList.tsx) worden de volgende tegels getoond per asset:
-- Stuks in bezit, Inleg, Actuele waarde, Ongerealiseerd, Gerealiseerd, Huidige prijs
-- "Totale transactiekosten"
-- "Totaal rendement" (berekend als bruto rendement − transactiekosten, maar ZONDER werkelijke lopende kosten)
-- "Lopende Kosten (TER)" (indicatief, conditioneel zichtbaar)
-
-De tegel "Werkelijke lopende kosten" (totaal van geregistreerde lopende kosten transacties) ontbreekt volledig in het tabblad Aandelen.
-
-Het "Totaal rendement" verrekent de werkelijke lopende kosten NIET (bug).
-
-De volgorde van tegels klopt niet: Transactiekosten en Werkelijke lopende kosten moeten vóór Totaal rendement staan, TER-tegel ná Totaal rendement.
-
-In het Jaaroverzicht (YearOverview.tsx) bestaat de tegel "Werkelijke lopende kosten" al en wordt correct verrekend in het netto rendement.
+De app ondersteunt transacties van type koop/verkoop/dividend/staking. Een "Lopende kosten"-transactie (ongoingCosts) is frontend-only gedefinieerd als string constante `"ongoingCosts"`. De Motoko backend heeft dit type **niet** in de `TransactionType` union, waardoor het opslaan mislukt met een foutmelding. De frontend berekeningen (werkelijke lopende kosten, carryforward) zijn al correct opgezet maar kunnen nooit data bevatten omdat het opslaan mislukt.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Nieuwe tegel "Werkelijke lopende kosten" in het tabblad Aandelen (AssetsList.tsx) per asset: toont het totaal van alle transacties van type "Lopende kosten" (ongoingCosts) voor die asset, op basis van euroValue.
+- `#ongoingCosts` variant aan Motoko `TransactionType` union
+- `ongoingCosts` aan frontend `TransactionType` enum in `backend.d.ts`
 
 ### Modify
-- AssetsList.tsx: Correcte volgorde tegels wordt:
-  1. Stuks in bezit
-  2. Inleg
-  3. Actuele waarde
-  4. Ongerealiseerd
-  5. Gerealiseerd
-  6. Huidige prijs
-  7. Totale transactiekosten
-  8. Werkelijke lopende kosten (nieuw, altijd zichtbaar als > 0, anders € 0,00)
-  9. Totaal rendement (herberekend: bruto − transactiekosten − werkelijke lopende kosten)
-  10. Lopende Kosten (TER) (conditioneel, alleen bij ETF met TER > 0)
-
-- AssetsList.tsx: Rendementsberekening aanpassen:
-  - `grossReturn = fifo.realized + fifo.unrealized`
-  - `actualOngoingCosts = som van alle transacties met type ongoingCosts (euroValue)`
-  - `netReturn = grossReturn - totalTxFees - actualOngoingCosts`
-  - `netReturnPct` op basis van netReturn / netInvested
+- Motoko `TransactionType` type uitbreiden met `#ongoingCosts`
+- `backend.d.ts` `TransactionType` enum uitbreiden met `ongoingCosts = "ongoingCosts"`
+- `transactionTypes.ts`: `TX_ONGOING_COSTS` en `isOngoingCostsType` aanpassen om de echte enum-waarde te gebruiken (geen cast meer nodig)
+- `AddTransactionDialog.tsx`: gebruik `TransactionType.ongoingCosts` i.p.v. de cast-workaround
+- `YearOverview.tsx`, `yearStats.ts`, `carryforward.ts`: controleren of de isOngoingCostsType checks nog werken met de echte enum
 
 ### Remove
-- Niets verwijderd.
+- De `as unknown as TransactionType` cast-workaround voor ongoingCosts in transactionTypes.ts en AddTransactionDialog.tsx
 
 ## Implementation Plan
-
-1. In AssetsList.tsx: berekening toevoegen van `actualOngoingCosts` per asset (sum van alle tx met isOngoingCostsType → euroValue).
-2. In AssetsList.tsx: `netReturn` aanpassen naar `grossReturn - totalTxFees - actualOngoingCosts`.
-3. In AssetsList.tsx: nieuwe MetricCell "Werkelijke lopende kosten" toevoegen, altijd tonen (rood als > 0, anders neutrale kleur).
-4. In AssetsList.tsx: volgorde van MetricCells aanpassen conform de gewenste volgorde.
-5. Import van `isOngoingCostsType` toevoegen aan AssetsList.tsx.
+1. Motoko `main.mo`: voeg `#ongoingCosts` toe aan `TransactionType` union (publiek en intern)
+2. `backend.d.ts`: voeg `ongoingCosts = "ongoingCosts"` toe aan `TransactionType` enum
+3. `transactionTypes.ts`: gebruik `TransactionType.ongoingCosts` direct, verwijder cast
+4. `AddTransactionDialog.tsx`: gebruik `TransactionType.ongoingCosts` i.p.v. `TX_ONGOING_COSTS` cast
+5. Valideer dat `isOngoingCostsType` check in alle utils correct werkt
+6. Typecheck en build

@@ -48,6 +48,7 @@ export interface LoanView {
 export interface StakingRewardView { 'date' : Time, 'quantity' : number }
 export type Time = bigint;
 export type TransactionType = { 'buy' : null } |
+  { 'ongoingCosts' : null } |
   { 'dividend' : null } |
   { 'sell' : null } |
   { 'stakingReward' : null };
