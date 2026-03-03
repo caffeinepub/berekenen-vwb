@@ -21,6 +21,7 @@ import { useDeleteAsset } from "../hooks/useQueries";
 import { calculateFifo } from "../utils/fifo";
 import { formatEuro, formatQuantity } from "../utils/format";
 import { getEtfFlag } from "../utils/ter";
+import { isOngoingCostsType } from "../utils/transactionTypes";
 import { AddTransactionDialog } from "./AddTransactionDialog";
 import { AssetBadge } from "./AssetBadge";
 import { EditAssetDialog } from "./EditAssetDialog";
@@ -271,8 +272,18 @@ export function AssetsList({
 
                 {/* Metrics grid */}
                 {(() => {
+                  // Werkelijke lopende kosten = som van alle "Lopende kosten"-transacties
+                  const actualOngoingCosts = asset.transactions.reduce(
+                    (s, tx) =>
+                      isOngoingCostsType(tx.transactionType)
+                        ? s + (tx.euroValue ?? 0)
+                        : s,
+                    0,
+                  );
+
                   const grossReturn = fifo.realized + fifo.unrealized;
-                  const netReturn = grossReturn - totalTxFees;
+                  const netReturn =
+                    grossReturn - totalTxFees - actualOngoingCosts;
                   const netReturnPct =
                     fifo.netInvested > 0
                       ? (netReturn / fifo.netInvested) * 100
@@ -337,7 +348,7 @@ export function AssetsList({
                         }
                       />
                       <MetricCell
-                        label="Totale transactiekosten"
+                        label="Transactiekosten"
                         value={
                           totalTxFees > 0 ? (
                             <span className="num font-medium text-loss">
@@ -350,6 +361,22 @@ export function AssetsList({
                           )
                         }
                       />
+                      {isStock && !isCommodityAsset && (
+                        <MetricCell
+                          label="Werkelijke lopende kosten"
+                          value={
+                            actualOngoingCosts > 0 ? (
+                              <span className="num font-medium text-loss">
+                                -{formatEuro(actualOngoingCosts)}
+                              </span>
+                            ) : (
+                              <span className="num font-medium text-muted-foreground">
+                                {formatEuro(0)}
+                              </span>
+                            )
+                          }
+                        />
+                      )}
                       <MetricCell
                         label="Totaal rendement"
                         value={
@@ -365,7 +392,7 @@ export function AssetsList({
                         hasTer &&
                         totalTerCosts > 0 && (
                           <MetricCell
-                            label="Lopende Kosten (TER)"
+                            label="Lopende kosten TER"
                             value={
                               <span className="num font-medium text-loss">
                                 -{formatEuro(totalTerCosts)}

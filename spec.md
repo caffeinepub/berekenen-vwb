@@ -2,72 +2,51 @@
 
 ## Current State
 
-- ETF-assets worden aangemaakt in de backend als `AssetType.stock`; de ETF-vlag, TER-percentage en "lopende kosten van toepassing"-vlag worden uitsluitend in `localStorage` opgeslagen via `utils/ter.ts`.
-- `useTer.ts` leest deze waarden bij opstarten uit `localStorage` via `useState` en schrijft terug via `setTerPercentage` / `setOngoingCostsFlag`.
-- `useSettings.ts` slaat de Twelve Data API-sleutel ook op in `localStorage`.
-- Na een sessie-reset, browserwisseling of caches-wipe verdwijnen alle `localStorage`-waarden → TER-percentage en lopende kosten-indicatie "verdwijnen".
-- De backend (`main.mo`) heeft wel velden `terEntries` en `ongoingCostsEntries` in `UserData` en in `UserSettingsView`, plus `saveUserSettings` / `getUserSettings` endpoints, maar deze worden vanuit de frontend **nooit aangesproken** — er wordt alleen naar `localStorage` geschreven.
-- Kostencarryforward (doorschuiven van kosten naar volgend jaar als onvoldoende gerealiseerde winst) bestaat nog niet.
+In het tabblad Aandelen (AssetsList.tsx) worden de volgende tegels getoond per asset:
+- Stuks in bezit, Inleg, Actuele waarde, Ongerealiseerd, Gerealiseerd, Huidige prijs
+- "Totale transactiekosten"
+- "Totaal rendement" (berekend als bruto rendement − transactiekosten, maar ZONDER werkelijke lopende kosten)
+- "Lopende Kosten (TER)" (indicatief, conditioneel zichtbaar)
+
+De tegel "Werkelijke lopende kosten" (totaal van geregistreerde lopende kosten transacties) ontbreekt volledig in het tabblad Aandelen.
+
+Het "Totaal rendement" verrekent de werkelijke lopende kosten NIET (bug).
+
+De volgorde van tegels klopt niet: Transactiekosten en Werkelijke lopende kosten moeten vóór Totaal rendement staan, TER-tegel ná Totaal rendement.
+
+In het Jaaroverzicht (YearOverview.tsx) bestaat de tegel "Werkelijke lopende kosten" al en wordt correct verrekend in het netto rendement.
 
 ## Requested Changes (Diff)
 
 ### Add
-
-1. **Utility `utils/carryforward.ts`**: berekening van kostencarryforward over meerdere jaren.
-   - Input: alle assets, TER-map, ongoingCostsMap, alle jaren met data.
-   - Output per jaar: bruto gerealiseerde winst, transactiekosten, ETF lopende kosten (werkelijke lopende kosten-transacties), carryforward vanuit vorige jaren, netto gerealiseerde winst, resterende kosten doorgeschoven naar volgend jaar.
-   - Historische carryforward-tabel: per jaar — kosten, verrekend, cumulatief doorgeschoven.
-
-2. **Dashboard — kostenverrekening sectie** (nieuw blok in `PortfolioDashboard.tsx`):
-   - Per categorie (Aandelen, Crypto, Grondstoffen) + portefeuilletotaal.
-   - Toon: gerealiseerde winst (bruto), transactiekosten, lopende kosten ETF, doorgeschoven kosten, netto gerealiseerde winst, "Nog niet benutte kosten" (oranje indien > 0).
-
-3. **Jaaroverzicht — kostenverrekening sectie** (nieuw blok in `YearOverview.tsx`):
-   - Sectie "Gerealiseerde winst en kosten {jaar}" met volledig uitgesplitste weergave.
-   - Toon: bruto gerealiseerde winst, kosten {jaar} (transactiekosten + lopende kosten ETF + subtotaal), doorgeschoven kosten per jaar van herkomst + subtotaal, totaal kosten verrekend, netto gerealiseerde winst, resterende kosten doorgeschoven.
-
-4. **Historisch overzicht carryforward-tabel** onderaan jaaroverzicht:
-   - Tabel: Jaar | Kosten | Verrekend | Doorgeschoven (cumulatief).
+- Nieuwe tegel "Werkelijke lopende kosten" in het tabblad Aandelen (AssetsList.tsx) per asset: toont het totaal van alle transacties van type "Lopende kosten" (ongoingCosts) voor die asset, op basis van euroValue.
 
 ### Modify
+- AssetsList.tsx: Correcte volgorde tegels wordt:
+  1. Stuks in bezit
+  2. Inleg
+  3. Actuele waarde
+  4. Ongerealiseerd
+  5. Gerealiseerd
+  6. Huidige prijs
+  7. Totale transactiekosten
+  8. Werkelijke lopende kosten (nieuw, altijd zichtbaar als > 0, anders € 0,00)
+  9. Totaal rendement (herberekend: bruto − transactiekosten − werkelijke lopende kosten)
+  10. Lopende Kosten (TER) (conditioneel, alleen bij ETF met TER > 0)
 
-5. **TER/ongoingCosts persistentie naar backend** — fix de kern-oorzaak van het verdwijnen van TER-data:
-   - `hooks/useUserSettings.ts` (nieuw of uitgebreid): na inloggen `getUserSettings()` aanroepen en TER/ongoingCosts inladen vanuit backend; bij wijziging `saveUserSettings()` aanroepen naast `localStorage`-schrijf.
-   - `hooks/useTer.ts`: aanpassen zodat het bij mount de backend-waarden laadt als fallback wanneer `localStorage` leeg is.
-   - `AddAssetDialog.tsx` en `EditAssetDialog.tsx`: na opslaan van TER/ongoingCosts ook de backend bijwerken via `saveUserSettings`.
-   - De `twelveDataApiKey` wordt meegestuurd bij elke `saveUserSettings`-aanroep zodat bestaande data niet verloren gaat.
-
-6. **`YearStats` interface uitbreiden** met `carryforwardIn`, `carryforwardOut` velden voor gebruik in export/PDF.
+- AssetsList.tsx: Rendementsberekening aanpassen:
+  - `grossReturn = fifo.realized + fifo.unrealized`
+  - `actualOngoingCosts = som van alle transacties met type ongoingCosts (euroValue)`
+  - `netReturn = grossReturn - totalTxFees - actualOngoingCosts`
+  - `netReturnPct` op basis van netReturn / netInvested
 
 ### Remove
-
-- Geen bestaande functionaliteit verwijderen.
+- Niets verwijderd.
 
 ## Implementation Plan
 
-1. **`utils/carryforward.ts`** aanmaken:
-   - Functie `computeCarryforwardHistory(assets, terMap, ongoingCostsMap, years)` die per jaar berekent: bruto gerealiseerde winst (uit `computeRealizedForYear`), transactiekosten, werkelijke lopende kosten (ongoingCosts-transacties), carryforward in, netto resultaat, carryforward out.
-   - Exporteer ook `computeCarryforwardForYear(assets, terMap, ongoingCostsMap, year)` als single-year entry.
-
-2. **`hooks/useUserSettings.ts`** aanmaken/uitbreiden:
-   - Na initialisatie de backend `getUserSettings()` aanroepen.
-   - Sla de backend-waarden op in `localStorage` als er lokaal niets staat (merge-strategie).
-   - Exporteer `syncSettingsToBackend(terMap, ongoingCostsMap, apiKey)` helper die `saveUserSettings` aanroept.
-
-3. **`hooks/useTer.ts`** aanpassen:
-   - Bij `updateTer` en `updateOngoingCosts`: na `localStorage`-schrijf ook `syncSettingsToBackend` aanroepen.
-
-4. **`AddAssetDialog.tsx` / `EditAssetDialog.tsx`** aanpassen:
-   - Na het opslaan van TER/ongoingCosts de backend `saveUserSettings` aanroepen met volledige gecombineerde map.
-
-5. **`PortfolioDashboard.tsx`** uitbreiden:
-   - Nieuwe sectie "Kostenverrekening" toevoegen met per-categorie blokken (Aandelen, Crypto, Grondstoffen) en totaalblok.
-   - Gebruik `computeCarryforwardForYear` voor het huidige jaar.
-   - "Nog niet benutte kosten" oranje tonen indien > 0.
-
-6. **`YearOverview.tsx`** uitbreiden:
-   - Nieuwe sectie onder de bestaande StatCards en voor de transactietabel.
-   - Sectie "Gerealiseerde winst en kosten {jaar}" met volledige uitsplitsing.
-   - Historische carryforward-tabel onderaan.
-
-7. Typecheck en build validatie.
+1. In AssetsList.tsx: berekening toevoegen van `actualOngoingCosts` per asset (sum van alle tx met isOngoingCostsType → euroValue).
+2. In AssetsList.tsx: `netReturn` aanpassen naar `grossReturn - totalTxFees - actualOngoingCosts`.
+3. In AssetsList.tsx: nieuwe MetricCell "Werkelijke lopende kosten" toevoegen, altijd tonen (rood als > 0, anders neutrale kleur).
+4. In AssetsList.tsx: volgorde van MetricCells aanpassen conform de gewenste volgorde.
+5. Import van `isOngoingCostsType` toevoegen aan AssetsList.tsx.
