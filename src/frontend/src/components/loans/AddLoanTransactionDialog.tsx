@@ -28,6 +28,10 @@ import {
   dateToBigintNano,
   todayInputValue,
 } from "../../utils/format";
+import {
+  calcMonthlyInterest,
+  loanOutstandingAtDate,
+} from "../../utils/loanHelpers";
 
 export interface RecurringLoanSchedule {
   id: string;
@@ -40,6 +44,10 @@ export interface RecurringLoanSchedule {
   endDate: string;
   frequency: "daily" | "weekly" | "monthly";
   lastExecuted?: string;
+  /** Automatisch rente registreren bij elke aflossing in deze reeks */
+  autoInterest?: boolean;
+  /** Jaarlijks rentepercentage, bewaard bij aanmaken zodat de hook het kan gebruiken */
+  interestRatePercent?: number;
 }
 
 interface LoanTxPrefill {
@@ -88,6 +96,8 @@ export function AddLoanTransactionDialog({
     frequency: "monthly" as "daily" | "weekly" | "monthly",
   });
 
+  const [autoInterest, setAutoInterest] = useState(false);
+
   const addLoanTransaction = useAddLoanTransaction();
 
   useEffect(() => {
@@ -105,6 +115,7 @@ export function AddLoanTransactionDialog({
         endDate: "",
         frequency: "monthly",
       });
+      setAutoInterest(false);
     }
   }, [open, prefill]);
 
@@ -113,6 +124,8 @@ export function AddLoanTransactionDialog({
     const existing: RecurringLoanSchedule[] = JSON.parse(
       localStorage.getItem(key) ?? "[]",
     );
+    const isRepayment =
+      form.transactionType === LoanTransactionType.repaymentReceived;
     const schedule: RecurringLoanSchedule = {
       id: Date.now().toString(),
       loanId: loan.id.toString(),
@@ -123,6 +136,12 @@ export function AddLoanTransactionDialog({
       startDate: recurring.startDate,
       endDate: recurring.endDate,
       frequency: recurring.frequency,
+      // Markeer de startdatum als al uitgevoerd, zodat de hook geen
+      // dubbele transactie aanmaakt op diezelfde datum.
+      lastExecuted: recurring.startDate,
+      // Bewaar autoInterest-instelling zodat de hook dit kan toepassen bij elke herhaling
+      autoInterest: isRepayment ? autoInterest : false,
+      interestRatePercent: loan.interestRatePercent ?? 0,
     };
     localStorage.setItem(key, JSON.stringify([...existing, schedule]));
   };
@@ -140,15 +159,42 @@ export function AddLoanTransactionDialog({
       return;
     }
 
-    const date = dateToBigintNano(dateInputToDate(form.date));
+    // Als herhaling is ingeschakeld, gebruik de startdatum van de herhaling
+    // als transactiedatum voor de eerste (directe) transactie.
+    const txDateStr = recurring.enabled ? recurring.startDate : form.date;
+    const txDate = dateInputToDate(txDateStr);
+    const dateNano = dateToBigintNano(txDate);
+
     try {
       await addLoanTransaction.mutateAsync({
         loanId: loan.id,
         transactionType: form.transactionType,
-        date,
+        date: dateNano,
         amount,
         notes: form.notes.trim() || undefined,
       });
+
+      // Automatisch rente registreren bij aflossing (indien ingeschakeld)
+      const annualRate = loan.interestRatePercent ?? 0;
+      if (
+        form.transactionType === LoanTransactionType.repaymentReceived &&
+        autoInterest &&
+        annualRate > 0
+      ) {
+        // Bereken uitstaande schuld vóór de huidige aflossing
+        const outstanding = loanOutstandingAtDate(loan, txDate);
+        const interestAmount = calcMonthlyInterest(outstanding, annualRate);
+
+        if (interestAmount > 0) {
+          await addLoanTransaction.mutateAsync({
+            loanId: loan.id,
+            transactionType: LoanTransactionType.interestReceived,
+            date: dateNano,
+            amount: Math.round(interestAmount * 100) / 100,
+            notes: `Automatische rente bij aflossing (${annualRate}% p.j.)`,
+          });
+        }
+      }
 
       if (recurring.enabled && recurring.endDate) {
         saveRecurringSchedule(amount);
@@ -158,10 +204,15 @@ export function AddLoanTransactionDialog({
             : "Aflossing geregistreerd en herhaling ingesteld",
         );
       } else {
+        const isRepayment =
+          form.transactionType === LoanTransactionType.repaymentReceived;
+        const interestAdded = isRepayment && autoInterest && annualRate > 0;
         toast.success(
           form.transactionType === LoanTransactionType.interestReceived
             ? "Rente geregistreerd"
-            : "Aflossing geregistreerd",
+            : interestAdded
+              ? "Aflossing en rente geregistreerd"
+              : "Aflossing geregistreerd",
         );
       }
       setOpen(false);
@@ -256,6 +307,34 @@ export function AddLoanTransactionDialog({
               className="resize-none"
             />
           </div>
+
+          {/* Automatisch rente bij aflossing */}
+          {form.transactionType === LoanTransactionType.repaymentReceived &&
+            (loan.interestRatePercent ?? 0) > 0 && (
+              <div className="border border-border rounded-lg p-3 flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="loan-tx-auto-interest"
+                    checked={autoInterest}
+                    onCheckedChange={(checked) => setAutoInterest(!!checked)}
+                  />
+                  <Label
+                    htmlFor="loan-tx-auto-interest"
+                    className="flex items-center gap-1.5 cursor-pointer font-medium"
+                  >
+                    Automatisch rente registreren
+                  </Label>
+                </div>
+                {autoInterest && (
+                  <p className="text-xs text-muted-foreground pl-6">
+                    De applicatie berekent automatisch maandrente (
+                    {loan.interestRatePercent}% p.j.) over de uitstaande schuld
+                    vóór deze aflossing en registreert dit als aparte
+                    rente-transactie op dezelfde datum.
+                  </p>
+                )}
+              </div>
+            )}
 
           {/* Recurring transaction section */}
           <div className="border border-border rounded-lg p-3 flex flex-col gap-3">

@@ -6,6 +6,7 @@ import {
   TransactionType,
 } from "../backend.d";
 import { calculateFifo } from "./fifo";
+import { isOngoingCostsType } from "./transactionTypes";
 
 export interface YearStats {
   totalInvested: number;
@@ -14,6 +15,7 @@ export interface YearStats {
   realizedPnL: number;
   unrealizedPnL: number;
   txTerCosts: number;
+  actualOngoingCosts: number;
   totalDividend: number;
   totalStaking: number;
   totalLoanInterest: number;
@@ -100,6 +102,7 @@ export function computeRealizedForYear(
         txProfits.set(tx.origIdx, tx.euroValue);
       }
     }
+    // ongoingCosts: skip entirely — it is a cost, not a gain, and tracked separately
   }
 
   return { totalRealized, txProfits };
@@ -134,6 +137,7 @@ export function computeYearStats(
   let realizedPnL = 0;
   let unrealizedPnL = 0;
   let txTerCosts = 0;
+  let actualOngoingCosts = 0;
   let totalDividend = 0;
   let totalStaking = 0;
   let allTimeInvested = 0;
@@ -153,8 +157,13 @@ export function computeYearStats(
         totalDividend += tx.euroValue ?? 0;
       } else if (tx.transactionType === TransactionType.stakingReward) {
         totalStaking += tx.euroValue ?? 0;
+      } else if (isOngoingCostsType(tx.transactionType)) {
+        actualOngoingCosts += tx.euroValue ?? 0;
       }
-      totalFees += tx.fees ?? 0;
+      // ongoingCosts do NOT count as fees (totalFees is for transaction broker fees only)
+      if (!isOngoingCostsType(tx.transactionType)) {
+        totalFees += tx.fees ?? 0;
+      }
     }
 
     const { totalRealized } = computeRealizedForYear(asset.transactions, year);
@@ -190,6 +199,7 @@ export function computeYearStats(
       } else if (tx.transactionType === TransactionType.stakingReward) {
         lots.push({ quantity: tx.quantity, costPerUnit: 0 });
       }
+      // ongoingCosts: skip — not added to FIFO lots
     }
     const currentQty = lots.reduce((s, l) => s + l.quantity, 0);
     const costBasis = lots.reduce((s, l) => s + l.quantity * l.costPerUnit, 0);
@@ -213,8 +223,9 @@ export function computeYearStats(
   const totalLoanInterest = computeLoanInterestForYear(loans, year);
   realizedPnL += totalLoanInterest;
 
-  // Transactiekosten worden afgetrokken van bruto rendement; TER (lopende kosten) niet.
-  const netReturn = realizedPnL + unrealizedPnL - totalFees;
+  // Netto rendement = Bruto rendement − Transactiekosten − Werkelijke lopende kosten
+  const netReturn =
+    realizedPnL + unrealizedPnL - totalFees - actualOngoingCosts;
   const netReturnPct =
     allTimeInvested > 0 ? (netReturn / allTimeInvested) * 100 : 0;
 
@@ -225,6 +236,7 @@ export function computeYearStats(
     realizedPnL,
     unrealizedPnL,
     txTerCosts,
+    actualOngoingCosts,
     totalDividend,
     totalStaking,
     totalLoanInterest,

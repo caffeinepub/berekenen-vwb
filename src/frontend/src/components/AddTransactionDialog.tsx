@@ -35,6 +35,10 @@ import {
   formatQuantity,
   todayInputValue,
 } from "../utils/format";
+import {
+  TX_ONGOING_COSTS,
+  isOngoingCostsType,
+} from "../utils/transactionTypes";
 
 interface AddTransactionDialogProps {
   assets: AssetView[];
@@ -47,6 +51,8 @@ interface AddTransactionDialogProps {
   /** External open state control */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Map of tickers that have ongoing costs enabled (ETF with "Lopende kosten van toepassing" = ja) */
+  ongoingCostsMap?: Record<string, boolean>;
 }
 
 const INITIAL_FORM = {
@@ -88,6 +94,7 @@ export function AddTransactionDialog({
   prefill,
   open: externalOpen,
   onOpenChange: externalOnOpenChange,
+  ongoingCostsMap,
 }: AddTransactionDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = externalOpen !== undefined;
@@ -128,6 +135,15 @@ export function AddTransactionDialog({
   );
   const isStaking = form.transactionType === TransactionType.stakingReward;
   const isDividend = form.transactionType === TransactionType.dividend;
+  const isOngoingCosts = isOngoingCostsType(form.transactionType);
+
+  // ETF with ongoing costs enabled = may add "Lopende kosten" transaction type
+  const isEtfWithOngoingCosts = !!(
+    selectedAsset &&
+    selectedAsset.assetType === AssetType.stock &&
+    !isCommodity &&
+    ongoingCostsMap?.[selectedAsset.ticker] === true
+  );
 
   // Auto-fill sell price with current asset price when switching to sell type
   useEffect(() => {
@@ -194,6 +210,36 @@ export function AddTransactionDialog({
         setOpen(false);
       } catch {
         toast.error("Fout bij het toevoegen van dividend");
+      }
+      return;
+    }
+
+    // Lopende kosten: only needs euroValue
+    if (isOngoingCosts) {
+      const parsedEuroValue = Number.parseFloat(
+        form.euroValue.replace(",", "."),
+      );
+      if (Number.isNaN(parsedEuroValue) || parsedEuroValue <= 0) {
+        toast.error("Ongeldig bedrag voor lopende kosten");
+        return;
+      }
+      const dateObj = dateInputToDate(form.date);
+      const dateBigint = dateToBigintNano(dateObj);
+      try {
+        await addTransaction.mutateAsync({
+          asset: form.ticker,
+          transactionType: TX_ONGOING_COSTS,
+          date: dateBigint,
+          quantity: 0,
+          pricePerUnit: 0,
+          fees: undefined,
+          euroValue: parsedEuroValue,
+          notes: form.notes.trim() || undefined,
+        });
+        toast.success("Lopende kosten toegevoegd");
+        setOpen(false);
+      } catch {
+        toast.error("Fout bij het toevoegen van lopende kosten");
       }
       return;
     }
@@ -336,6 +382,11 @@ export function AddTransactionDialog({
                     Dividend
                   </SelectItem>
                 )}
+                {isEtfWithOngoingCosts && (
+                  <SelectItem value={TX_ONGOING_COSTS as unknown as string}>
+                    Lopende kosten
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -354,11 +405,14 @@ export function AddTransactionDialog({
             />
           </div>
 
-          {/* Dividend: only show euro value field */}
-          {isDividend && (
+          {/* Dividend / Lopende kosten: only show euro value field */}
+          {(isDividend || isOngoingCosts) && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-euro-value">
-                Ontvangen bedrag (€) <span className="text-loss">*</span>
+                {isOngoingCosts
+                  ? "Bedrag lopende kosten (€)"
+                  : "Ontvangen bedrag (€)"}{" "}
+                <span className="text-loss">*</span>
               </Label>
               <Input
                 id="tx-euro-value"
@@ -375,8 +429,8 @@ export function AddTransactionDialog({
             </div>
           )}
 
-          {/* Quantity — not for dividend */}
-          {!isDividend && (
+          {/* Quantity — not for dividend or ongoingCosts */}
+          {!isDividend && !isOngoingCosts && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-qty">
                 {isCrypto
@@ -418,8 +472,8 @@ export function AddTransactionDialog({
             </div>
           )}
 
-          {/* Price per unit — not for staking or dividend */}
-          {!isStaking && !isDividend && (
+          {/* Price per unit — not for staking, dividend, or ongoingCosts */}
+          {!isStaking && !isDividend && !isOngoingCosts && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-price">
                 {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"}{" "}
@@ -463,8 +517,8 @@ export function AddTransactionDialog({
             </div>
           )}
 
-          {/* Fees — not for staking or dividend */}
-          {!isStaking && !isDividend && (
+          {/* Fees — not for staking, dividend, or ongoingCosts */}
+          {!isStaking && !isDividend && !isOngoingCosts && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tx-fees">Transactiekosten (€)</Label>
               <Input
@@ -507,7 +561,8 @@ export function AddTransactionDialog({
             <Button
               type="submit"
               disabled={
-                addTransaction.isPending || (!isDividend && isQuantityExceeded)
+                addTransaction.isPending ||
+                (!isDividend && !isOngoingCosts && isQuantityExceeded)
               }
             >
               {addTransaction.isPending && (

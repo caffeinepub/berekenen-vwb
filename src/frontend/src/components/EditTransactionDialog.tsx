@@ -36,6 +36,10 @@ import {
   formatQuantity,
   timeToDate,
 } from "../utils/format";
+import {
+  TX_ONGOING_COSTS,
+  isOngoingCostsType,
+} from "../utils/transactionTypes";
 
 interface EditTransactionDialogProps {
   asset: AssetView;
@@ -43,6 +47,8 @@ interface EditTransactionDialogProps {
   transaction: TransactionView;
   children?: React.ReactNode;
   isCommodity?: boolean;
+  /** Map of tickers that have ongoing costs enabled (ETF with "Lopende kosten van toepassing" = ja) */
+  ongoingCostsMap?: Record<string, boolean>;
 }
 
 export function EditTransactionDialog({
@@ -51,6 +57,7 @@ export function EditTransactionDialog({
   transaction,
   children,
   isCommodity = false,
+  ongoingCostsMap,
 }: EditTransactionDialogProps) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
@@ -74,6 +81,19 @@ export function EditTransactionDialog({
   const isCrypto = asset.assetType === AssetType.crypto;
   const isStaking = form.transactionType === TransactionType.stakingReward;
   const isDividend = form.transactionType === TransactionType.dividend;
+  const isOngoingCosts = isOngoingCostsType(form.transactionType);
+
+  // ETF with ongoing costs enabled = may add/edit "Lopende kosten" transaction type
+  const isEtfWithOngoingCosts = !!(
+    asset.assetType === AssetType.stock &&
+    !isCommodity &&
+    ongoingCostsMap?.[asset.ticker] === true
+  );
+
+  // Show ongoingCosts option if either the asset is ETF with ongoing costs enabled,
+  // OR the existing transaction is already of type ongoingCosts (so it can still be edited)
+  const showOngoingCostsOption =
+    isEtfWithOngoingCosts || isOngoingCostsType(transaction.transactionType);
 
   const handleOpen = (isOpen: boolean) => {
     if (isOpen) {
@@ -151,6 +171,38 @@ export function EditTransactionDialog({
           transaction: {
             asset: asset.ticker,
             transactionType: form.transactionType,
+            date: dateBigint,
+            quantity: 0,
+            pricePerUnit: 0,
+            fees: undefined,
+            euroValue: parsedEuroValue,
+            notes: form.notes.trim() || undefined,
+          },
+        });
+        toast.success("Transactie bijgewerkt");
+        setOpen(false);
+      } catch {
+        toast.error("Fout bij het bijwerken van transactie");
+      }
+      return;
+    }
+
+    // Lopende kosten: only needs euroValue
+    if (isOngoingCosts) {
+      const parsedEuroValue = Number.parseFloat(
+        form.euroValue.replace(",", "."),
+      );
+      if (Number.isNaN(parsedEuroValue) || parsedEuroValue <= 0) {
+        toast.error("Ongeldig bedrag voor lopende kosten");
+        return;
+      }
+      try {
+        await updateTransaction.mutateAsync({
+          ticker: asset.ticker,
+          index: transactionIndex,
+          transaction: {
+            asset: asset.ticker,
+            transactionType: TX_ONGOING_COSTS,
             date: dateBigint,
             quantity: 0,
             pricePerUnit: 0,
@@ -267,6 +319,11 @@ export function EditTransactionDialog({
                     Dividend
                   </SelectItem>
                 )}
+                {showOngoingCostsOption && (
+                  <SelectItem value={TX_ONGOING_COSTS as unknown as string}>
+                    Lopende kosten
+                  </SelectItem>
+                )}
               </SelectContent>
             </Select>
           </div>
@@ -285,11 +342,14 @@ export function EditTransactionDialog({
             />
           </div>
 
-          {/* Dividend: only show euro value field */}
-          {isDividend && (
+          {/* Dividend / Lopende kosten: only show euro value field */}
+          {(isDividend || isOngoingCosts) && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-tx-euro-value">
-                Ontvangen bedrag (€) <span className="text-loss">*</span>
+                {isOngoingCosts
+                  ? "Bedrag lopende kosten (€)"
+                  : "Ontvangen bedrag (€)"}{" "}
+                <span className="text-loss">*</span>
               </Label>
               <Input
                 id="edit-tx-euro-value"
@@ -306,8 +366,8 @@ export function EditTransactionDialog({
             </div>
           )}
 
-          {/* Quantity — not for dividend */}
-          {!isDividend && (
+          {/* Quantity — not for dividend or ongoingCosts */}
+          {!isDividend && !isOngoingCosts && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-tx-qty">
                 {isCrypto
@@ -349,8 +409,8 @@ export function EditTransactionDialog({
             </div>
           )}
 
-          {/* Price per unit — not for staking or dividend */}
-          {!isStaking && !isDividend && (
+          {/* Price per unit — not for staking, dividend, or ongoingCosts */}
+          {!isStaking && !isDividend && !isOngoingCosts && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-tx-price">
                 {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"}{" "}
@@ -367,7 +427,7 @@ export function EditTransactionDialog({
                   sellPriceAutoFilled.current = true; // user manually edited
                   setForm((p) => ({ ...p, pricePerUnit: e.target.value }));
                 }}
-                required={!isStaking && !isDividend}
+                required={!isStaking && !isDividend && !isOngoingCosts}
               />
             </div>
           )}
@@ -394,8 +454,8 @@ export function EditTransactionDialog({
             </div>
           )}
 
-          {/* Fees — not for staking or dividend */}
-          {!isStaking && !isDividend && (
+          {/* Fees — not for staking, dividend, or ongoingCosts */}
+          {!isStaking && !isDividend && !isOngoingCosts && (
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="edit-tx-fees">Transactiekosten (€)</Label>
               <Input
@@ -439,7 +499,7 @@ export function EditTransactionDialog({
               type="submit"
               disabled={
                 updateTransaction.isPending ||
-                (!isDividend && isQuantityExceeded)
+                (!isDividend && !isOngoingCosts && isQuantityExceeded)
               }
             >
               {updateTransaction.isPending && (

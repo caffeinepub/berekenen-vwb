@@ -20,6 +20,7 @@ import { AssetType, type AssetView } from "../backend.d";
 import { useDeleteAsset } from "../hooks/useQueries";
 import { calculateFifo } from "../utils/fifo";
 import { formatEuro, formatQuantity } from "../utils/format";
+import { getEtfFlag } from "../utils/ter";
 import { AddTransactionDialog } from "./AddTransactionDialog";
 import { AssetBadge } from "./AssetBadge";
 import { EditAssetDialog } from "./EditAssetDialog";
@@ -226,6 +227,7 @@ export function AssetsList({
                         <AssetBadge
                           assetType={asset.assetType}
                           isCommodity={isCommodityAsset}
+                          isEtf={!isCommodityAsset && getEtfFlag(asset.ticker)}
                         />
                       </div>
                     </div>
@@ -235,6 +237,7 @@ export function AssetsList({
                       assets={[asset]}
                       defaultTicker={asset.ticker}
                       commodityTickers={commodityTickers}
+                      ongoingCostsMap={ongoingCostsMap}
                     >
                       <Button
                         size="sm"
@@ -362,7 +365,7 @@ export function AssetsList({
                         hasTer &&
                         totalTerCosts > 0 && (
                           <MetricCell
-                            label="Totaal (huidige) lopende kosten"
+                            label="Lopende Kosten (TER)"
                             value={
                               <span className="num font-medium text-loss">
                                 -{formatEuro(totalTerCosts)}
@@ -460,6 +463,7 @@ export function AssetsList({
                   terMap={terMap}
                   ticker={asset.ticker}
                   isCommodity={isCommodityAsset}
+                  ongoingCostsMap={ongoingCostsMap}
                 />
               </div>
             )}

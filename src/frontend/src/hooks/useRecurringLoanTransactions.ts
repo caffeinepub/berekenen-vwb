@@ -1,12 +1,16 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import type { LoanTransactionType, LoanView } from "../backend.d";
+import { LoanTransactionType, type LoanView } from "../backend.d";
 import type { RecurringLoanSchedule } from "../components/loans/AddLoanTransactionDialog";
 import {
   dateInputToDate,
   dateToBigintNano,
   dateToInputValue,
 } from "../utils/format";
+import {
+  calcMonthlyInterest,
+  loanOutstandingAtDate,
+} from "../utils/loanHelpers";
 import { useAddLoanTransaction } from "./useQueries";
 
 const STORAGE_KEY = "portfolioflow_recurring_loans";
@@ -87,9 +91,31 @@ export function useRecurringLoanTransactions(loans: LoanView[]) {
 
       let lastExecuted = schedule.lastExecuted;
 
+      // Bijhouden van herhalingen die al zijn aangemaakt in deze run,
+      // zodat loanOutstandingAtDate correct werkt ook als de loan-state
+      // nog niet is ververst (bijv. meerdere maanden tegelijk).
+      let pendingRepaymentTotal = 0;
+
+      const isRepayment =
+        schedule.transactionType === LoanTransactionType.repaymentReceived;
+      const shouldAutoInterest =
+        isRepayment &&
+        !!schedule.autoInterest &&
+        (schedule.interestRatePercent ?? 0) > 0;
+
       // Execute all due dates up to today
       while (cursor <= today && cursor <= endDate) {
         const dateNano = dateToBigintNano(cursor);
+
+        // Bereken uitstaande schuld op cursordate, gecorrigeerd voor al
+        // eerder in deze loop aangemaakte (nog niet opgeslagen) aflossingen.
+        const baseOutstanding = loanOutstandingAtDate(loan, cursor);
+        const outstanding = Math.max(
+          0,
+          baseOutstanding - pendingRepaymentTotal,
+        );
+
+        // Registreer de aflossing
         addLoanTransaction
           .mutateAsync({
             loanId: loan.id,
@@ -101,6 +127,32 @@ export function useRecurringLoanTransactions(loans: LoanView[]) {
           .catch(() => {
             // silently ignore individual failures
           });
+
+        // Registreer automatisch rente als ingeschakeld — dezelfde logica als handmatig
+        if (shouldAutoInterest && outstanding > 0) {
+          const interestAmount = calcMonthlyInterest(
+            outstanding,
+            schedule.interestRatePercent!,
+          );
+          if (interestAmount > 0) {
+            addLoanTransaction
+              .mutateAsync({
+                loanId: loan.id,
+                transactionType: LoanTransactionType.interestReceived,
+                date: dateNano,
+                amount: Math.round(interestAmount * 100) / 100,
+                notes: `Automatische rente bij aflossing (${schedule.interestRatePercent}% p.j.)`,
+              })
+              .catch(() => {
+                // silently ignore individual failures
+              });
+          }
+        }
+
+        // Houd bij hoeveel er al is afgelost in deze run (voor correcte berekening volgende iteratie)
+        if (isRepayment) {
+          pendingRepaymentTotal += schedule.amount;
+        }
 
         lastExecuted = dateToInputValue(cursor);
         anyCreated++;

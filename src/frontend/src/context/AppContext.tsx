@@ -13,6 +13,7 @@ import { useActor } from "../hooks/useActor";
 import { usePriceRefresh } from "../hooks/usePriceRefresh";
 import { useAllAssets, useAllLoans } from "../hooks/useQueries";
 import { useUserSettings } from "../hooks/useUserSettings";
+import { getEtfFlag, setEtfFlag } from "../utils/ter";
 
 export type Section =
   | "dashboard"
@@ -93,6 +94,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     () => new Set(commodityTickersArray.map((t) => t.toUpperCase())),
     [commodityTickersArray],
   );
+
+  // ─── Data-herstel: sync ETF-vlaggen op basis van ongoingCostsMap ────────────
+  // Als een asset ongoingCosts heeft maar geen ETF-vlag, herstel de ETF-vlag.
+  // Dit corrigeert assets die onterecht als Aandeel zijn opgeslagen.
+  useEffect(() => {
+    if (!assets.length) return;
+    for (const asset of assets) {
+      if (asset.assetType !== AssetType.stock) continue;
+      if (commodityTickers.has(asset.ticker)) continue;
+      // Als ongoingCostsMap dit als ETF markeert maar ETF-vlag ontbreekt
+      if (ongoingCostsMap[asset.ticker] && !getEtfFlag(asset.ticker)) {
+        setEtfFlag(asset.ticker, true);
+      }
+    }
+  }, [assets, ongoingCostsMap, commodityTickers]);
 
   // ─── Actor readiness — derived, not state ─────────────────────────────────
   const isActorReady = !!actor;

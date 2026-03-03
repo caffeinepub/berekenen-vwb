@@ -1,15 +1,18 @@
 import { cn } from "@/lib/utils";
 import { AssetType, type TransactionType } from "../backend.d";
+import { isOngoingCostsType } from "../utils/transactionTypes";
 
 interface AssetBadgeProps {
   assetType: AssetType;
   isCommodity?: boolean;
+  isEtf?: boolean;
   className?: string;
 }
 
 export function AssetBadge({
   assetType,
   isCommodity = false,
+  isEtf = false,
   className,
 }: AssetBadgeProps) {
   if (isCommodity) {
@@ -26,6 +29,22 @@ export function AssetBadge({
     );
   }
   const isStock = assetType === AssetType.stock;
+
+  // ETF is a frontend distinction within AssetType.stock
+  if (isStock && isEtf) {
+    return (
+      <span
+        className={cn(
+          "ticker-chip",
+          "bg-blue-500/15 text-blue-600 dark:text-blue-400",
+          className,
+        )}
+      >
+        ETF
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(
@@ -68,6 +87,21 @@ export function TransactionTypeBadge({
   type,
   className,
 }: TransactionTypeBadgeProps) {
+  // Handle ongoingCosts separately since it's not in the backend.d.ts enum
+  if (isOngoingCostsType(type)) {
+    return (
+      <span
+        className={cn(
+          "ticker-chip",
+          "bg-orange-500/15 text-orange-600 dark:text-orange-400",
+          className,
+        )}
+      >
+        Lopende kosten
+      </span>
+    );
+  }
+
   const config: Record<TransactionType, { label: string; classes: string }> = {
     buy: { label: "Aankoop", classes: "bg-gain/15 text-gain" },
     sell: { label: "Verkoop", classes: "bg-loss/15 text-loss" },

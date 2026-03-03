@@ -38,10 +38,15 @@ interface EditAssetDialogProps {
   isCommodity?: boolean;
 }
 
-function getInitialFormType(asset: AssetView): FormAssetType {
+function getInitialFormType(
+  asset: AssetView,
+  ongoingCostsEnabled?: boolean,
+): FormAssetType {
   if (asset.assetType === AssetType.crypto) return "crypto";
-  // Check ETF flag from localStorage
+  // ETF flag has priority
   if (getEtfFlag(asset.ticker)) return "etf";
+  // Fallback: if ongoing costs are active, this is an ETF (data recovery)
+  if (ongoingCostsEnabled) return "etf";
   return "stock";
 }
 
@@ -57,7 +62,7 @@ export function EditAssetDialog({
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     name: asset.name,
-    formType: getInitialFormType(asset) as FormAssetType,
+    formType: getInitialFormType(asset, ongoingCostsEnabled) as FormAssetType,
     currentPrice: String(asset.currentPrice),
     hasOngoingCosts: ongoingCostsEnabled,
     ter: terValue !== undefined && terValue !== null ? String(terValue) : "",
@@ -68,7 +73,7 @@ export function EditAssetDialog({
     if (isOpen) {
       setForm({
         name: asset.name,
-        formType: getInitialFormType(asset),
+        formType: getInitialFormType(asset, ongoingCostsEnabled),
         currentPrice: String(asset.currentPrice),
         hasOngoingCosts: ongoingCostsEnabled,
         ter:

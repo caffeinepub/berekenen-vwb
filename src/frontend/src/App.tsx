@@ -165,6 +165,7 @@ function AppContent() {
                   loans={loans}
                   commodityTickers={commodityTickers}
                   terMap={terMap}
+                  ongoingCostsMap={ongoingCostsMap}
                   onNavigate={(section) => setActiveSection(section)}
                 />
               </section>
@@ -189,6 +190,7 @@ function AppContent() {
                 <YearOverview
                   assets={assets}
                   terMap={terMap}
+                  ongoingCostsMap={ongoingCostsMap}
                   commodityTickers={commodityTickers}
                   loans={loans}
                 />

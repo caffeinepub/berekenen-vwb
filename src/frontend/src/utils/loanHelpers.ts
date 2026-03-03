@@ -1,5 +1,39 @@
 import { LoanStatus, LoanTransactionType, type LoanView } from "../backend.d";
 
+/**
+ * Berekent de uitstaande schuld op een specifieke datum.
+ * Telt alleen aflossingen mee die strikt vóór de opgegeven datum vallen.
+ */
+export function loanOutstandingAtDate(loan: LoanView, date: Date): number {
+  const dayBefore = new Date(date);
+  dayBefore.setHours(0, 0, 0, 0);
+
+  const totalRepaid = loan.transactions
+    .filter((t) => {
+      if (t.transactionType !== LoanTransactionType.repaymentReceived)
+        return false;
+      // transactie datum is opgeslagen als nanoseconden BigInt
+      const txDate = new Date(Number(t.date / 1_000_000n));
+      txDate.setHours(0, 0, 0, 0);
+      return txDate < dayBefore;
+    })
+    .reduce((s, t) => s + t.amount, 0);
+
+  return Math.max(0, loan.loanedAmount - totalRepaid);
+}
+
+/**
+ * Berekent maandrente: (jaarpercentage / 12) × uitstaande schuld
+ * @param outstandingAmount - uitstaande schuld in euro
+ * @param annualRatePercent - jaarlijks rentepercentage (bijv. 5 voor 5%)
+ */
+export function calcMonthlyInterest(
+  outstandingAmount: number,
+  annualRatePercent: number,
+): number {
+  return (annualRatePercent / 100 / 12) * outstandingAmount;
+}
+
 export function calcDurationMonths(
   startDateStr: string,
   endDateStr: string,

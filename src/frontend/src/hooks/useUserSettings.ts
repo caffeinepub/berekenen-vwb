@@ -221,27 +221,27 @@ export function useUserSettings() {
     const newCommodityTickers = backendSettings.commodityTickers;
     const newApiKey = backendSettings.twelveDataApiKey;
 
-    if (backendApplied.current) {
-      // Already applied once — only update if data meaningfully changed
-      const currentSnapshot = JSON.stringify({
-        terMap: terMapRef.current,
-        ongoingCostsMap: ongoingCostsMapRef.current,
-        commodityTickers: commodityTickersRef.current,
-        twelveDataApiKey: twelveDataApiKeyRef.current,
-      });
-      const newSnapshot = JSON.stringify({
-        terMap: newTerMap,
-        ongoingCostsMap: newOngoingCostsMap,
-        commodityTickers: newCommodityTickers,
-        twelveDataApiKey: newApiKey,
-      });
-      if (currentSnapshot === newSnapshot) return;
-    }
-
-    setTerMap(newTerMap);
-    setOngoingCostsMap(newOngoingCostsMap);
-    setCommodityTickers(newCommodityTickers);
-    setTwelveDataApiKeyState(newApiKey);
+    // Always apply backend data when it arrives — use functional updates with
+    // JSON comparison to avoid unnecessary re-renders. This avoids the stale-ref
+    // issue where refs are updated in separate useEffects after this effect runs.
+    setTerMap((prev) => {
+      if (JSON.stringify(prev) === JSON.stringify(newTerMap)) return prev;
+      return newTerMap;
+    });
+    setOngoingCostsMap((prev) => {
+      if (JSON.stringify(prev) === JSON.stringify(newOngoingCostsMap))
+        return prev;
+      return newOngoingCostsMap;
+    });
+    setCommodityTickers((prev) => {
+      if (JSON.stringify(prev) === JSON.stringify(newCommodityTickers))
+        return prev;
+      return newCommodityTickers;
+    });
+    setTwelveDataApiKeyState((prev) => {
+      if (prev === newApiKey) return prev;
+      return newApiKey;
+    });
     backendApplied.current = true;
 
     // Write-through to localStorage as cache for instant loading on next session

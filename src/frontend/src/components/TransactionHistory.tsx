@@ -28,6 +28,7 @@ import {
 } from "../backend.d";
 import { useDeleteTransaction } from "../hooks/useQueries";
 import { formatDate, formatEuro, formatQuantity } from "../utils/format";
+import { isOngoingCostsType } from "../utils/transactionTypes";
 import { AddTransactionDialog } from "./AddTransactionDialog";
 import { TransactionTypeBadge } from "./AssetBadge";
 import { EditTransactionDialog } from "./EditTransactionDialog";
@@ -41,6 +42,7 @@ interface TransactionHistoryProps {
   ticker?: string;
   defaultOpen?: boolean;
   isCommodity?: boolean;
+  ongoingCostsMap?: Record<string, boolean>;
 }
 
 interface TransactionWithProfit extends TransactionView {
@@ -100,6 +102,7 @@ function computeTransactionProfits(
         profitMap.set(origIdx, tx.euroValue);
       }
     }
+    // ongoingCosts: not shown in profit column — it's a cost shown separately in YearOverview
   }
 
   // Return in display order (newest first handled by caller) with originalIndex
@@ -169,6 +172,7 @@ export function TransactionHistory({
   assetType,
   defaultOpen = false,
   isCommodity = false,
+  ongoingCostsMap,
 }: TransactionHistoryProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [prefillTx, setPrefillTx] = useState<TransactionView | null>(null);
@@ -243,11 +247,16 @@ export function TransactionHistory({
                       <TransactionTypeBadge type={tx.transactionType} />
                     </td>
                     <td className="py-2.5 pr-4 text-right num">
-                      {formatQuantity(tx.quantity, isCrypto)}
+                      {isOngoingCostsType(tx.transactionType) ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        formatQuantity(tx.quantity, isCrypto)
+                      )}
                     </td>
                     <td className="py-2.5 pr-4 text-right num">
                       {tx.transactionType === TransactionType.stakingReward ||
-                      tx.transactionType === TransactionType.dividend ? (
+                      tx.transactionType === TransactionType.dividend ||
+                      isOngoingCostsType(tx.transactionType) ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
                         formatEuro(tx.pricePerUnit, 6)
@@ -281,6 +290,7 @@ export function TransactionHistory({
                           transactionIndex={tx.originalIndex}
                           transaction={transactions[tx.originalIndex]}
                           isCommodity={isCommodity}
+                          ongoingCostsMap={ongoingCostsMap}
                         >
                           <button
                             type="button"
@@ -316,6 +326,7 @@ export function TransactionHistory({
             if (!v) setPrefillTx(null);
           }}
           commodityTickers={isCommodity ? new Set([asset.ticker]) : undefined}
+          ongoingCostsMap={ongoingCostsMap}
         />
       )}
     </div>

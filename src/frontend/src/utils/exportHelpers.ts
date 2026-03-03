@@ -6,9 +6,11 @@ import {
   formatPercent,
   formatQuantity,
 } from "./format";
+import { isOngoingCostsType } from "./transactionTypes";
 import type { YearStats, YearTransaction } from "./yearStats";
 
 function txTypeLabel(type: TransactionType): string {
+  if (isOngoingCostsType(type)) return "Lopende kosten";
   switch (type) {
     case TransactionType.buy:
       return "Aankoop";
@@ -54,8 +56,8 @@ export async function exportXlsx(
       : []),
     ["Netto rendement", stats.netReturn],
     ["Rendement %", stats.netReturnPct / 100],
-    ...(stats.txTerCosts > 0
-      ? [["Lopende kosten (ETF) – totaal huidige waarde", -stats.txTerCosts]]
+    ...(stats.actualOngoingCosts > 0
+      ? [["Werkelijke lopende kosten", -stats.actualOngoingCosts]]
       : []),
   ];
 
@@ -91,13 +93,21 @@ export async function exportXlsx(
         : isCommodityRow
           ? "Grondstof"
           : "Aandeel",
-      tx.transactionType === TransactionType.dividend ? "" : tx.quantity,
+      tx.transactionType === TransactionType.dividend ||
+      isOngoingCostsType(tx.transactionType)
+        ? ""
+        : tx.quantity,
       tx.transactionType === TransactionType.stakingReward ||
-      tx.transactionType === TransactionType.dividend
+      tx.transactionType === TransactionType.dividend ||
+      isOngoingCostsType(tx.transactionType)
         ? ""
         : tx.pricePerUnit,
       tx.fees ?? "",
-      tx.realizedProfit ?? "",
+      isOngoingCostsType(tx.transactionType)
+        ? tx.euroValue !== undefined
+          ? -tx.euroValue
+          : ""
+        : (tx.realizedProfit ?? ""),
     ];
   });
 
@@ -186,11 +196,11 @@ export async function exportPdf(
       : []),
     ["Netto rendement", formatEuro(stats.netReturn)],
     ["Rendement %", formatPercent(stats.netReturnPct)],
-    ...(stats.txTerCosts > 0
+    ...(stats.actualOngoingCosts > 0
       ? [
           [
-            "Lopende kosten (ETF) – totaal huidige waarde",
-            `-${formatEuro(stats.txTerCosts)}`,
+            "Werkelijke lopende kosten",
+            `-${formatEuro(stats.actualOngoingCosts)}`,
           ],
         ]
       : []),
@@ -237,15 +247,23 @@ export async function exportPdf(
         : isCommodityRow
           ? "Grondstof"
           : "Aandeel",
-      tx.transactionType === TransactionType.dividend
+      tx.transactionType === TransactionType.dividend ||
+      isOngoingCostsType(tx.transactionType)
         ? "—"
         : formatQuantity(tx.quantity, tx.assetType === AssetType.crypto),
       tx.transactionType === TransactionType.stakingReward ||
-      tx.transactionType === TransactionType.dividend
+      tx.transactionType === TransactionType.dividend ||
+      isOngoingCostsType(tx.transactionType)
         ? "—"
         : formatEuro(tx.pricePerUnit, 4),
       tx.fees ? formatEuro(tx.fees) : "—",
-      tx.realizedProfit !== undefined ? formatEuro(tx.realizedProfit) : "—",
+      isOngoingCostsType(tx.transactionType)
+        ? tx.euroValue !== undefined
+          ? formatEuro(-tx.euroValue)
+          : "—"
+        : tx.realizedProfit !== undefined
+          ? formatEuro(tx.realizedProfit)
+          : "—",
     ];
   });
 

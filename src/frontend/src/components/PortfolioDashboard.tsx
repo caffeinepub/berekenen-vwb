@@ -1,4 +1,5 @@
-import { Layers } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { AlertCircle, Layers, Receipt, TrendingUp } from "lucide-react";
 import { useMemo } from "react";
 import {
   AssetType,
@@ -7,7 +8,9 @@ import {
   type LoanView,
 } from "../backend.d";
 import type { Section } from "../context/AppContext";
+import { computeCarryforwardForYear } from "../utils/carryforward";
 import { calculateFifo } from "../utils/fifo";
+import { formatEuro } from "../utils/format";
 import { CategoryCards } from "./dashboard/CategoryCards";
 import { PortfolioCharts } from "./dashboard/PortfolioCharts";
 import { RecentTransactions } from "./dashboard/RecentTransactions";
@@ -18,9 +21,173 @@ interface PortfolioDashboardProps {
   loans: LoanView[];
   commodityTickers: Set<string>;
   terMap: Record<string, number>;
+  ongoingCostsMap: Record<string, boolean>;
   onNavigate: (
     section: Extract<Section, "stocks" | "crypto" | "commodities" | "loans">,
   ) => void;
+}
+
+interface KostenverrekeningRowProps {
+  label: string;
+  amount: number;
+  isNegative?: boolean;
+  isBold?: boolean;
+  isTotal?: boolean;
+  isOrange?: boolean;
+}
+
+function KostenverrekeningRow({
+  label,
+  amount,
+  isNegative = false,
+  isBold = false,
+  isTotal = false,
+  isOrange = false,
+}: KostenverrekeningRowProps) {
+  const colorClass = isOrange
+    ? "text-amber-500"
+    : isTotal
+      ? amount > 0.005
+        ? "text-gain"
+        : amount < -0.005
+          ? "text-loss"
+          : "text-muted-foreground"
+      : isNegative
+        ? "text-loss"
+        : "text-foreground";
+
+  return (
+    <div
+      className={cn(
+        "flex items-center justify-between py-1.5 text-sm",
+        isTotal && "border-t border-border mt-1 pt-2.5",
+      )}
+    >
+      <span
+        className={cn(
+          "text-muted-foreground",
+          isBold && "font-medium text-foreground",
+          isTotal && "font-semibold text-foreground",
+        )}
+      >
+        {label}
+      </span>
+      <span
+        className={cn(
+          "num font-medium tabular-nums",
+          colorClass,
+          isBold && "font-semibold",
+          isTotal && "font-bold",
+        )}
+      >
+        {isNegative && amount > 0.005
+          ? `-${formatEuro(amount)}`
+          : isTotal
+            ? amount > 0.005
+              ? `+${formatEuro(amount)}`
+              : amount < -0.005
+                ? `-${formatEuro(Math.abs(amount))}`
+                : formatEuro(0)
+            : formatEuro(amount)}
+      </span>
+    </div>
+  );
+}
+
+interface KostencategoryBlockProps {
+  title: string;
+  assets: AssetView[];
+  ongoingCostsMap: Record<string, boolean>;
+  currentYear: number;
+  colorAccent: string;
+}
+
+function KostencategoryBlock({
+  title,
+  assets,
+  ongoingCostsMap,
+  currentYear,
+  colorAccent,
+}: KostencategoryBlockProps) {
+  const cf = useMemo(
+    () => computeCarryforwardForYear(assets, ongoingCostsMap, currentYear),
+    [assets, ongoingCostsMap, currentYear],
+  );
+
+  const hasData =
+    cf.grossRealizedProfit > 0.005 ||
+    cf.transactionFees > 0.005 ||
+    cf.etfOngoingCosts > 0.005 ||
+    cf.carryforwardIn > 0.005;
+
+  if (!hasData) return null;
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-0.5">
+      <div
+        className={cn(
+          "text-xs font-semibold uppercase tracking-widest mb-2",
+          colorAccent,
+        )}
+      >
+        {title}
+      </div>
+      <KostenverrekeningRow
+        label="Gerealiseerde winst (bruto)"
+        amount={cf.grossRealizedProfit}
+      />
+      {cf.transactionFees > 0.005 && (
+        <KostenverrekeningRow
+          label="Transactiekosten"
+          amount={cf.transactionFees}
+          isNegative
+        />
+      )}
+      {cf.etfOngoingCosts > 0.005 && (
+        <KostenverrekeningRow
+          label="Lopende kosten ETF"
+          amount={cf.etfOngoingCosts}
+          isNegative
+        />
+      )}
+      {cf.carryforwardIn > 0.005 && (
+        <KostenverrekeningRow
+          label="Doorgeschoven kosten"
+          amount={cf.carryforwardIn}
+          isNegative
+        />
+      )}
+      <KostenverrekeningRow
+        label={`Netto gerealiseerde winst ${currentYear}`}
+        amount={cf.netRealizedProfit}
+        isTotal
+        isBold
+      />
+      {cf.carryforwardOut > 0.005 && (
+        <div className="mt-2 pt-2 border-t border-border/50 flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+            <span className="text-xs text-muted-foreground">
+              Nog niet benutte kosten
+            </span>
+          </div>
+          <span className="num text-sm font-semibold text-amber-500 tabular-nums">
+            {formatEuro(cf.carryforwardOut)}
+          </span>
+        </div>
+      )}
+      {cf.carryforwardOut <= 0.005 && (
+        <div className="mt-2 pt-2 border-t border-border/50 flex items-center justify-between">
+          <span className="text-xs text-muted-foreground">
+            Nog niet benutte kosten
+          </span>
+          <span className="num text-xs text-muted-foreground tabular-nums">
+            {formatEuro(0)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 type FifoMap = Map<string, ReturnType<typeof calculateFifo>>;
@@ -54,6 +221,7 @@ export function PortfolioDashboard({
   assets,
   loans,
   commodityTickers,
+  ongoingCostsMap,
   onNavigate,
 }: PortfolioDashboardProps) {
   const stockAssets = assets.filter(
@@ -140,9 +308,16 @@ export function PortfolioDashboard({
     };
   }, [stocksSummary, cryptoSummary, commoditiesSummary, loansSummary]);
 
+  const currentYear = new Date().getFullYear();
+
   const hasAnyData = useMemo(
     () => assets.some((a) => a.transactions.length > 0) || loans.length > 0,
     [assets, loans],
+  );
+
+  const hasTransactions = useMemo(
+    () => assets.some((a) => a.transactions.length > 0),
+    [assets],
   );
 
   if (!hasAnyData) {
@@ -222,6 +397,122 @@ export function PortfolioDashboard({
         loans={loansSummary}
         onNavigate={onNavigate}
       />
+
+      {hasTransactions && (
+        <section aria-label="Kostenverrekening">
+          <div className="flex items-center gap-2 mb-4">
+            <Receipt className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-base font-semibold tracking-tight">
+              Kostenverrekening {currentYear}
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+            <KostencategoryBlock
+              title="Aandelen"
+              assets={stockAssets}
+              ongoingCostsMap={ongoingCostsMap}
+              currentYear={currentYear}
+              colorAccent="text-primary"
+            />
+            <KostencategoryBlock
+              title="Crypto"
+              assets={cryptoAssets}
+              ongoingCostsMap={ongoingCostsMap}
+              currentYear={currentYear}
+              colorAccent="text-chart-2"
+            />
+            <KostencategoryBlock
+              title="Grondstoffen"
+              assets={commodityAssets}
+              ongoingCostsMap={ongoingCostsMap}
+              currentYear={currentYear}
+              colorAccent="text-amber-500"
+            />
+            {(() => {
+              const cf = computeCarryforwardForYear(
+                assets,
+                ongoingCostsMap,
+                currentYear,
+              );
+              const hasData =
+                cf.grossRealizedProfit > 0.005 ||
+                cf.transactionFees > 0.005 ||
+                cf.etfOngoingCosts > 0.005 ||
+                cf.carryforwardIn > 0.005;
+              if (!hasData) return null;
+              return (
+                <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-0.5 sm:col-span-2 xl:col-span-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <TrendingUp className="w-3.5 h-3.5 text-muted-foreground" />
+                    <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                      Portefeuille totaal
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
+                    <div>
+                      <KostenverrekeningRow
+                        label="Gerealiseerde winst (bruto)"
+                        amount={cf.grossRealizedProfit}
+                      />
+                      {cf.transactionFees > 0.005 && (
+                        <KostenverrekeningRow
+                          label="Transactiekosten"
+                          amount={cf.transactionFees}
+                          isNegative
+                        />
+                      )}
+                      {cf.etfOngoingCosts > 0.005 && (
+                        <KostenverrekeningRow
+                          label="Lopende kosten ETF"
+                          amount={cf.etfOngoingCosts}
+                          isNegative
+                        />
+                      )}
+                      {cf.carryforwardIn > 0.005 && (
+                        <KostenverrekeningRow
+                          label="Doorgeschoven kosten"
+                          amount={cf.carryforwardIn}
+                          isNegative
+                        />
+                      )}
+                      <KostenverrekeningRow
+                        label={`Netto gerealiseerde winst ${currentYear}`}
+                        amount={cf.netRealizedProfit}
+                        isTotal
+                        isBold
+                      />
+                    </div>
+                    <div className="flex flex-col justify-end">
+                      {cf.carryforwardOut > 0.005 ? (
+                        <div className="flex items-center justify-between py-2 px-3 bg-amber-500/10 border border-amber-500/30 rounded-lg mt-2 sm:mt-0">
+                          <div className="flex items-center gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                            <span className="text-xs text-amber-600 dark:text-amber-400">
+                              Nog niet benutte kosten
+                            </span>
+                          </div>
+                          <span className="num text-sm font-bold text-amber-500 tabular-nums">
+                            {formatEuro(cf.carryforwardOut)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between py-2 px-3 bg-muted/30 border border-border rounded-lg mt-2 sm:mt-0">
+                          <span className="text-xs text-muted-foreground">
+                            Nog niet benutte kosten
+                          </span>
+                          <span className="num text-xs text-muted-foreground tabular-nums">
+                            {formatEuro(0)}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </section>
+      )}
 
       <PortfolioCharts
         assets={assets}

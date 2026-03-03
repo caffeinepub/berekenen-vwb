@@ -17,10 +17,14 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  ArrowRight,
   Calendar,
+  ChevronDown,
+  ChevronUp,
   Coins,
   FileSpreadsheet,
   FileText,
+  History,
   Inbox,
   Landmark,
   Percent,
@@ -37,6 +41,10 @@ import {
   type LoanView,
   TransactionType,
 } from "../backend.d";
+import {
+  computeCarryforwardAllYears,
+  computeCarryforwardForYear,
+} from "../utils/carryforward";
 import { exportPdf, exportXlsx } from "../utils/exportHelpers";
 import {
   formatDate,
@@ -44,6 +52,7 @@ import {
   formatPercent,
   formatQuantity,
 } from "../utils/format";
+import { isOngoingCostsType } from "../utils/transactionTypes";
 import {
   computeWealthAtDate,
   computeYearStats,
@@ -55,6 +64,7 @@ import { MoneyValue, ReturnValue } from "./MoneyValue";
 interface YearOverviewProps {
   assets: AssetView[];
   terMap: Record<string, number>;
+  ongoingCostsMap: Record<string, boolean>;
   commodityTickers?: Set<string>;
   loans?: LoanView[];
 }
@@ -88,6 +98,7 @@ function StatCard({ label, value, icon, className }: StatCardProps) {
 export function YearOverview({
   assets,
   terMap,
+  ongoingCostsMap,
   commodityTickers,
   loans = [],
 }: YearOverviewProps) {
@@ -118,7 +129,30 @@ export function YearOverview({
     [assets, loans, selectedYear],
   );
 
-  const hasTxTerCosts = stats.txTerCosts > 0;
+  const carryforwardYear = useMemo(
+    () => computeCarryforwardForYear(assets, ongoingCostsMap, selectedYear),
+    [assets, ongoingCostsMap, selectedYear],
+  );
+
+  const { history: carryforwardHistory } = useMemo(
+    () => computeCarryforwardAllYears(assets, ongoingCostsMap),
+    [assets, ongoingCostsMap],
+  );
+
+  const [showCarryforwardDetails, setShowCarryforwardDetails] = useState(false);
+
+  const hasCarryforwardData =
+    carryforwardYear.grossRealizedProfit > 0.005 ||
+    carryforwardYear.transactionFees > 0.005 ||
+    carryforwardYear.etfOngoingCosts > 0.005 ||
+    carryforwardYear.carryforwardIn > 0.005 ||
+    carryforwardYear.carryforwardOut > 0.005;
+
+  const hasHistoryData = carryforwardHistory.some(
+    (h) => h.costsThisYear > 0 || h.cumulativeCarryforward > 0,
+  );
+
+  const hasActualOngoingCosts = stats.actualOngoingCosts > 0;
   const hasDividend = stats.totalDividend > 0;
   const hasStaking = stats.totalStaking > 0;
   const hasLoanInterest = stats.totalLoanInterest > 0;
@@ -266,6 +300,17 @@ export function YearOverview({
             )
           }
         />
+        {hasActualOngoingCosts && (
+          <StatCard
+            label="Werkelijke lopende kosten"
+            icon={<Percent className="w-4 h-4" />}
+            value={
+              <span className="num text-lg font-semibold text-loss">
+                -{formatEuro(stats.actualOngoingCosts)}
+              </span>
+            }
+          />
+        )}
         <StatCard
           label="Netto rendement"
           icon={
@@ -302,17 +347,6 @@ export function YearOverview({
             returnIsNegative && "border-loss/30",
           )}
         />
-        {hasTxTerCosts && (
-          <StatCard
-            label="Lopende kosten (ETF)"
-            icon={<Percent className="w-4 h-4" />}
-            value={
-              <span className="num text-lg font-semibold text-loss">
-                -{formatEuro(stats.txTerCosts)}
-              </span>
-            }
-          />
-        )}
       </div>
 
       {/* Begin- en eindstand vermogen */}
@@ -332,6 +366,274 @@ export function YearOverview({
           }
         />
       </div>
+
+      {/* Gerealiseerde winst en kosten (carryforward) */}
+      {hasCarryforwardData && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-accent/20 transition-colors"
+            onClick={() => setShowCarryforwardDetails((v) => !v)}
+            data-ocid="yearoverview.carryforward.toggle"
+          >
+            <div className="flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-semibold">
+                Gerealiseerde winst en kosten {selectedYear}
+              </span>
+            </div>
+            {showCarryforwardDetails ? (
+              <ChevronUp className="w-4 h-4 text-muted-foreground" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-muted-foreground" />
+            )}
+          </button>
+
+          {showCarryforwardDetails && (
+            <div className="px-5 pb-5 pt-1 border-t border-border">
+              <div className="max-w-lg">
+                {/* Bruto winst */}
+                <div className="flex items-center justify-between py-2 text-sm">
+                  <span className="text-muted-foreground">
+                    Gerealiseerde winst {selectedYear} (bruto)
+                  </span>
+                  <span
+                    className={cn(
+                      "num font-medium tabular-nums",
+                      carryforwardYear.grossRealizedProfit > 0.005
+                        ? "text-gain"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {carryforwardYear.grossRealizedProfit > 0.005
+                      ? `+${formatEuro(carryforwardYear.grossRealizedProfit)}`
+                      : formatEuro(0)}
+                  </span>
+                </div>
+
+                {/* Kosten dit jaar */}
+                {(carryforwardYear.transactionFees > 0.005 ||
+                  carryforwardYear.etfOngoingCosts > 0.005) && (
+                  <div className="mt-2">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+                      Kosten {selectedYear}
+                    </p>
+                    {carryforwardYear.transactionFees > 0.005 && (
+                      <div className="flex items-center justify-between py-1.5 text-sm pl-3">
+                        <span className="text-muted-foreground">
+                          Transactiekosten
+                        </span>
+                        <span className="num text-loss tabular-nums">
+                          -{formatEuro(carryforwardYear.transactionFees)}
+                        </span>
+                      </div>
+                    )}
+                    {carryforwardYear.etfOngoingCosts > 0.005 && (
+                      <div className="flex items-center justify-between py-1.5 text-sm pl-3">
+                        <span className="text-muted-foreground">
+                          Lopende kosten ETF
+                        </span>
+                        <span className="num text-loss tabular-nums">
+                          -{formatEuro(carryforwardYear.etfOngoingCosts)}
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between py-1.5 text-sm pl-3 border-t border-border/50 mt-1">
+                      <span className="font-medium text-foreground">
+                        Subtotaal kosten {selectedYear}
+                      </span>
+                      <span className="num font-medium text-loss tabular-nums">
+                        -
+                        {formatEuro(
+                          carryforwardYear.transactionFees +
+                            carryforwardYear.etfOngoingCosts,
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Doorgeschoven kosten */}
+                {carryforwardYear.carryforwardIn > 0.005 && (
+                  <div className="mt-3">
+                    <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+                      Doorgeschoven kosten uit voorgaande jaren
+                    </p>
+                    {carryforwardYear.carryforwardInBreakdown.map(
+                      ({ fromYear, amount }) => (
+                        <div
+                          key={fromYear}
+                          className="flex items-center justify-between py-1.5 text-sm pl-3"
+                        >
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <ArrowRight className="w-3 h-3" />
+                            <span>Uit {fromYear}</span>
+                          </div>
+                          <span className="num text-loss tabular-nums">
+                            -{formatEuro(amount)}
+                          </span>
+                        </div>
+                      ),
+                    )}
+                    <div className="flex items-center justify-between py-1.5 text-sm pl-3 border-t border-border/50 mt-1">
+                      <span className="font-medium text-foreground">
+                        Subtotaal doorgeschoven
+                      </span>
+                      <span className="num font-medium text-loss tabular-nums">
+                        -{formatEuro(carryforwardYear.carryforwardIn)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Totaal verrekend */}
+                {carryforwardYear.totalCosts > 0.005 && (
+                  <div className="flex items-center justify-between py-2 text-sm mt-2">
+                    <span className="text-muted-foreground">
+                      Totaal kosten verrekend in {selectedYear}
+                    </span>
+                    <span className="num text-loss tabular-nums">
+                      -{formatEuro(carryforwardYear.totalCosts)}
+                    </span>
+                  </div>
+                )}
+
+                {/* Divider + netto */}
+                <div className="border-t border-border my-2" />
+                <div className="flex items-center justify-between py-2 text-sm">
+                  <span className="font-semibold text-foreground">
+                    Netto gerealiseerde winst {selectedYear}
+                  </span>
+                  <span
+                    className={cn(
+                      "num font-bold tabular-nums",
+                      carryforwardYear.netRealizedProfit > 0.005
+                        ? "text-gain"
+                        : carryforwardYear.netRealizedProfit < -0.005
+                          ? "text-loss"
+                          : "text-muted-foreground",
+                    )}
+                  >
+                    {carryforwardYear.netRealizedProfit > 0.005
+                      ? `+${formatEuro(carryforwardYear.netRealizedProfit)}`
+                      : carryforwardYear.netRealizedProfit < -0.005
+                        ? `-${formatEuro(Math.abs(carryforwardYear.netRealizedProfit))}`
+                        : formatEuro(0)}
+                  </span>
+                </div>
+
+                {/* Resterende kosten */}
+                <div
+                  className={cn(
+                    "mt-3 flex items-center justify-between py-2 px-3 rounded-lg border text-sm",
+                    carryforwardYear.carryforwardOut > 0.005
+                      ? "bg-amber-500/10 border-amber-500/30"
+                      : "bg-muted/30 border-border",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "text-sm",
+                      carryforwardYear.carryforwardOut > 0.005
+                        ? "text-amber-600 dark:text-amber-400"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    Resterende kosten door te schuiven naar {selectedYear + 1}
+                  </span>
+                  <span
+                    className={cn(
+                      "num font-semibold tabular-nums",
+                      carryforwardYear.carryforwardOut > 0.005
+                        ? "text-amber-500"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {formatEuro(carryforwardYear.carryforwardOut)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Historisch overzicht doorgeschoven kosten */}
+      {hasHistoryData && (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <div className="flex items-center gap-2 px-5 py-4 border-b border-border">
+            <History className="w-4 h-4 text-muted-foreground" />
+            <span className="text-sm font-semibold">
+              Historisch overzicht doorgeschoven kosten
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  <th className="text-left px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Jaar
+                  </th>
+                  <th className="text-right px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Kosten (dit jaar)
+                  </th>
+                  <th className="text-right px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Verrekend
+                  </th>
+                  <th className="text-right px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Doorgeschoven
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {carryforwardHistory.map((h, idx) => (
+                  <tr
+                    key={h.year}
+                    className={cn(
+                      "border-b border-border/50 last:border-0",
+                      h.year === selectedYear && "bg-primary/5",
+                      idx % 2 === 0 ? "bg-transparent" : "bg-muted/10",
+                    )}
+                  >
+                    <td className="px-5 py-2.5 font-medium tabular-nums">
+                      {h.year === selectedYear ? (
+                        <span className="font-bold text-primary">{h.year}</span>
+                      ) : (
+                        h.year
+                      )}
+                    </td>
+                    <td className="px-5 py-2.5 text-right num tabular-nums text-muted-foreground">
+                      {formatEuro(h.costsThisYear)}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-5 py-2.5 text-right num tabular-nums",
+                        h.amountSettled > 0.005
+                          ? "text-gain"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {h.amountSettled > 0.005
+                        ? formatEuro(h.amountSettled)
+                        : formatEuro(0)}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-5 py-2.5 text-right num tabular-nums font-medium",
+                        h.cumulativeCarryforward > 0.005
+                          ? "text-amber-500"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {formatEuro(h.cumulativeCarryforward)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {yearTxs.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 gap-3 text-center bg-card border border-border rounded-lg">
@@ -432,7 +734,8 @@ export function YearOverview({
                         <TransactionTypeBadge type={tx.transactionType} />
                       </TableCell>
                       <TableCell className="num text-right py-2.5">
-                        {tx.transactionType === TransactionType.dividend ? (
+                        {tx.transactionType === TransactionType.dividend ||
+                        isOngoingCostsType(tx.transactionType) ? (
                           <span className="text-muted-foreground">—</span>
                         ) : (
                           formatQuantity(tx.quantity, isCrypto)
@@ -440,7 +743,8 @@ export function YearOverview({
                       </TableCell>
                       <TableCell className="num text-right py-2.5">
                         {tx.transactionType === TransactionType.stakingReward ||
-                        tx.transactionType === TransactionType.dividend ? (
+                        tx.transactionType === TransactionType.dividend ||
+                        isOngoingCostsType(tx.transactionType) ? (
                           <span className="text-muted-foreground">—</span>
                         ) : (
                           formatEuro(tx.pricePerUnit, 4)
@@ -450,7 +754,10 @@ export function YearOverview({
                         {tx.fees ? formatEuro(tx.fees) : "—"}
                       </TableCell>
                       <TableCell className="text-right py-2.5">
-                        {tx.realizedProfit !== undefined ? (
+                        {isOngoingCostsType(tx.transactionType) &&
+                        tx.euroValue !== undefined ? (
+                          <ReturnValue amount={-tx.euroValue} />
+                        ) : tx.realizedProfit !== undefined ? (
                           <ReturnValue amount={tx.realizedProfit} />
                         ) : (
                           <span className="text-muted-foreground">—</span>
