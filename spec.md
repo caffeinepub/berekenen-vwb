@@ -1,30 +1,29 @@
 # PortfolioFlow
 
 ## Current State
-- Dashboard (tab Aandelen) toont een hoofdtegel "Totale lopende kosten" (berekend op basis van TER % × actuele waarde), maar geen tegel "Werkelijke lopende kosten".
-- In `Dashboard.tsx` wordt `totalOngoingCosts` doorgegeven als TER-berekening, niet als som van "Lopende kosten"-transacties.
-- De `computeSummary`-functie in `Dashboard.tsx` berekent `totalReturn` als bruto rendement zonder aftrek van transactiekosten of werkelijke lopende kosten.
-- In `TransactionHistory.tsx` toont de kolom "Kosten" alleen `tx.fees`. Voor een "Lopende kosten"-transactie (`ongoingCosts`) is `tx.fees` leeg/undefined → streepje.
-- In `AddAssetDialog.tsx` wordt bij `handleSelectStock` de `hasOngoingCosts` altijd gereset naar `false` wanneer een zoekresultaat geselecteerd wordt (zelfs als type "etf" is). Dit zorgt ervoor dat de indicatie na selectie verdwijnt.
-- `App.tsx` berekent `totalOngoingCosts` als TER-berekening (percentage × waarde), maar de tegel heet "Totale lopende kosten" i.p.v. "Lopende kosten (TER)".
+- Jaaroverzicht heeft XLSX en PDF exportknoppen
+- XLSX export genereert twee tabbladen: Samenvatting en Transacties
+- PDF export gebruikt dynamische CDN-imports (jsPDF + autotable) die niet betrouwbaar laden
+- Historisch overzicht doorgeschoven kosten is zichtbaar onderaan de jaaroverzicht-pagina (alleen als er data is)
+- carryforwardHistory bevat per jaar: costsThisYear, amountSettled, cumulativeCarryforward
 
 ## Requested Changes (Diff)
 
 ### Add
-- Nieuwe prop `totalActualOngoingCosts` in `Dashboard.tsx` voor de tegel "Werkelijke lopende kosten" (som van "Lopende kosten"-transacties).
-- In `App.tsx`: berekening van `totalActualOngoingCosts` als som van alle `ongoingCosts`-transacties bij stockAssets.
+- Derde tabblad "Doorgeschoven kosten" toevoegen aan de XLSX export met de historische carryforward-tabel
+- PDF export: carryforward-historietabel opnemen als extra sectie in de PDF
 
 ### Modify
-- `Dashboard.tsx`: Hernoem tegel "Totale lopende kosten" naar "Lopende kosten (TER)". Voeg tegel "Werkelijke lopende kosten" toe (toont `totalActualOngoingCosts`). Pas `computeSummary` aan zodat `totalReturn` = bruto rendement − transactiekosten − werkelijke lopende kosten.
-- `App.tsx`: Geef `totalActualOngoingCosts` door aan `<Dashboard>`. Pas `totalOngoingCosts` naam aan voor de TER-berekening.
-- `TransactionHistory.tsx`: In de kolom "Kosten" — voor een `ongoingCosts`-transactie, toon `tx.euroValue` als het bedrag (i.p.v. `tx.fees`).
-- `AddAssetDialog.tsx`: Bij `handleSelectStock`, reset `hasOngoingCosts` NIET bij ETF-type. Of beter: bewaar `hasOngoingCosts` onveranderd als het type niet wijzigt. Zorg dat wanneer het instrument_type ETF is, de `hasOngoingCosts` niet automatisch op `false` wordt gezet.
+- PDF export: vervang de falende CDN-import door een werkende methode (gebruik jsPDF als npm package via vite bundeling, of als fallback: genereer een HTML-gebaseerde PDF via window.print())
+- XLSX export: carryforwardHistory meegeven als parameter zodat het derde tabblad gevuld kan worden
+- YearOverview.tsx: exportXlsx en exportPdf aanroepen uitbreiden met carryforwardHistory als argument
 
 ### Remove
-- Geen bestaande features verwijderen.
+- Niets verwijderen
 
 ## Implementation Plan
-1. `Dashboard.tsx`: voeg prop `totalActualOngoingCosts` toe; hernoem "Totale lopende kosten" naar "Lopende kosten (TER)"; voeg tegel "Werkelijke lopende kosten" toe; pas `computeSummary` aan om transactiekosten en werkelijke lopende kosten af te trekken van `totalReturn`.
-2. `App.tsx`: voeg `totalActualOngoingCosts`-berekening toe (som ongoingCosts transacties uit stockAssets); geef door aan `<Dashboard>`.
-3. `TransactionHistory.tsx`: in de "Kosten" kolom, voor ongoingCosts type gebruik `tx.euroValue ?? tx.fees` als weergavewaarde.
-4. `AddAssetDialog.tsx`: bij `handleSelectStock`, zet `hasOngoingCosts` niet terug op `false` — behoud de huidige waarde of zet hem op basis van `detectedType === "etf"` (maar reset hem niet onnodig).
+1. Installeer jsPDF + jspdf-autotable als npm dependencies zodat PDF-export betrouwbaar werkt zonder CDN-calls
+2. Update exportHelpers.ts:
+   - exportXlsx: voeg parameter carryforwardHistory toe en maak derde tabblad "Doorgeschoven kosten" aan
+   - exportPdf: migreer van CDN-import naar npm-pakket; voeg sectie "Doorgeschoven kosten" toe aan PDF
+3. Update YearOverview.tsx: geef carryforwardHistory mee aan beide exportfuncties

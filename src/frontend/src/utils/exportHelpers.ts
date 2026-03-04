@@ -1,5 +1,8 @@
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import { AssetType, TransactionType } from "../backend.d";
+import type { CarryforwardHistory } from "./carryforward";
 import {
   formatDate,
   formatEuro,
@@ -30,6 +33,7 @@ export async function exportXlsx(
   stats: YearStats,
   transactions: YearTransaction[],
   commodityTickers?: Set<string>,
+  carryforwardHistory?: CarryforwardHistory[],
 ) {
   let XLSX: any;
   try {
@@ -134,171 +138,257 @@ export async function exportXlsx(
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, summarySheet, "Samenvatting");
   XLSX.utils.book_append_sheet(wb, txSheet, "Transacties");
+
+  // Derde tabblad: Doorgeschoven kosten
+  if (carryforwardHistory && carryforwardHistory.length > 0) {
+    const cfHeaders = [
+      "Jaar",
+      "Kosten (dit jaar) (€)",
+      "Verrekend (€)",
+      "Doorgeschoven (€)",
+    ];
+    const cfRows = carryforwardHistory.map((h) => [
+      h.year,
+      h.costsThisYear,
+      h.amountSettled,
+      h.cumulativeCarryforward,
+    ]);
+    const cfSheet = XLSX.utils.aoa_to_sheet([cfHeaders, ...cfRows]);
+    cfSheet["!cols"] = [{ wch: 10 }, { wch: 22 }, { wch: 18 }, { wch: 20 }];
+    XLSX.utils.book_append_sheet(wb, cfSheet, "Doorgeschoven kosten");
+  }
+
   XLSX.writeFile(wb, `VWB_Jaaroverzicht_${year}.xlsx`);
 }
 
-export async function exportPdf(
+export function exportPdf(
   year: number,
   stats: YearStats,
   transactions: YearTransaction[],
   commodityTickers?: Set<string>,
+  carryforwardHistory?: CarryforwardHistory[],
 ) {
-  let jsPDFModule: any;
-  let autoTableModule: any;
   try {
-    jsPDFModule = await import(
-      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" as unknown as string
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(`PortfolioFlow — Jaaroverzicht ${year}`, 14, 18);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100);
+    doc.text(
+      `Gegenereerd op ${new Date().toLocaleDateString("nl-NL")}`,
+      14,
+      24,
     );
-    autoTableModule = await import(
-      "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" as unknown as string
-    );
-  } catch {
-    toast.error(
-      "Export niet beschikbaar: PDF-bibliotheek kon niet worden geladen",
-    );
-    return;
-  }
+    doc.setTextColor(0);
 
-  const JsPDFCtor =
-    jsPDFModule?.jsPDF ?? jsPDFModule?.default?.jsPDF ?? (jsPDFModule as any);
-  const autoTable = autoTableModule?.default ?? autoTableModule;
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Samenvatting", 14, 32);
 
-  const doc: any = new JsPDFCtor({
-    orientation: "landscape",
-    unit: "mm",
-    format: "a4",
-  });
-
-  doc.setFontSize(16);
-  doc.setFont("helvetica", "bold");
-  doc.text(`PortfolioFlow — Jaaroverzicht ${year}`, 14, 18);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(100);
-  doc.text(`Gegenereerd op ${new Date().toLocaleDateString("nl-NL")}`, 14, 24);
-  doc.setTextColor(0);
-
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.text("Samenvatting", 14, 32);
-
-  const summaryRows = [
-    ["Inleg", formatEuro(stats.totalInvested)],
-    ["Verkopen", formatEuro(stats.totalSales)],
-    ["Transactiekosten", formatEuro(stats.totalFees)],
-    ["Gerealiseerd", formatEuro(stats.realizedPnL)],
-    ["Ongerealiseerd", formatEuro(stats.unrealizedPnL)],
-    ...(stats.totalDividend > 0
-      ? [["Ontvangen dividend", formatEuro(stats.totalDividend)]]
-      : []),
-    ...(stats.totalStaking > 0
-      ? [["Ontvangen staking", formatEuro(stats.totalStaking)]]
-      : []),
-    ["Netto rendement", formatEuro(stats.netReturn)],
-    ["Rendement %", formatPercent(stats.netReturnPct)],
-    ...(stats.actualOngoingCosts > 0
-      ? [
-          [
-            "Werkelijke lopende kosten",
-            `-${formatEuro(stats.actualOngoingCosts)}`,
-          ],
-        ]
-      : []),
-  ];
-
-  autoTable(doc, {
-    startY: 36,
-    head: [["Omschrijving", "Bedrag"]],
-    body: summaryRows,
-    theme: "striped",
-    headStyles: { fillColor: [30, 30, 30], textColor: 255, fontSize: 9 },
-    bodyStyles: { fontSize: 9 },
-    columnStyles: { 1: { halign: "right" } },
-    margin: { left: 14, right: 14 },
-    tableWidth: 100,
-  });
-
-  const afterSummary = doc.lastAutoTable?.finalY ?? 80;
-
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.text("Transacties", 14, afterSummary + 10);
-
-  const txHeaders = [
-    "Datum",
-    "Asset",
-    "Ticker",
-    "Type",
-    "Sectie",
-    "Aantal",
-    "Prijs/stuk",
-    "Tx kosten",
-    "Winst/Verlies",
-  ];
-  const txRows = transactions.map((tx) => {
-    const isCommodityRow = !!commodityTickers?.has(tx.assetTicker);
-    return [
-      formatDate(tx.date),
-      tx.assetName,
-      tx.assetTicker,
-      txTypeLabel(tx.transactionType),
-      tx.assetType === AssetType.crypto
-        ? "Crypto"
-        : isCommodityRow
-          ? "Grondstof"
-          : "Aandeel",
-      tx.transactionType === TransactionType.dividend ||
-      isOngoingCostsType(tx.transactionType)
-        ? "—"
-        : formatQuantity(tx.quantity, tx.assetType === AssetType.crypto),
-      tx.transactionType === TransactionType.stakingReward ||
-      tx.transactionType === TransactionType.dividend ||
-      isOngoingCostsType(tx.transactionType)
-        ? "—"
-        : formatEuro(tx.pricePerUnit, 4),
-      tx.fees ? formatEuro(tx.fees) : "—",
-      isOngoingCostsType(tx.transactionType)
-        ? tx.euroValue !== undefined
-          ? formatEuro(-tx.euroValue)
-          : "—"
-        : tx.realizedProfit !== undefined
-          ? formatEuro(tx.realizedProfit)
-          : "—",
+    const summaryRows = [
+      ["Inleg", formatEuro(stats.totalInvested)],
+      ["Verkopen", formatEuro(stats.totalSales)],
+      ["Transactiekosten", formatEuro(stats.totalFees)],
+      ["Gerealiseerd", formatEuro(stats.realizedPnL)],
+      ["Ongerealiseerd", formatEuro(stats.unrealizedPnL)],
+      ...(stats.totalDividend > 0
+        ? [["Ontvangen dividend", formatEuro(stats.totalDividend)]]
+        : []),
+      ...(stats.totalStaking > 0
+        ? [["Ontvangen staking", formatEuro(stats.totalStaking)]]
+        : []),
+      ["Netto rendement", formatEuro(stats.netReturn)],
+      ["Rendement %", formatPercent(stats.netReturnPct)],
+      ...(stats.actualOngoingCosts > 0
+        ? [
+            [
+              "Werkelijke lopende kosten",
+              `-${formatEuro(stats.actualOngoingCosts)}`,
+            ],
+          ]
+        : []),
     ];
-  });
 
-  const totalFees = transactions.reduce((s, tx) => s + (tx.fees ?? 0), 0);
-  const totalPnL = transactions.reduce(
-    (s, tx) => s + (tx.realizedProfit ?? 0),
-    0,
-  );
-  const totaalRow = [
-    "Totaal",
-    "",
-    "",
-    "",
-    "",
-    "",
-    "",
-    formatEuro(totalFees),
-    formatEuro(totalPnL),
-  ];
+    autoTable(doc, {
+      startY: 36,
+      head: [["Omschrijving", "Bedrag"]],
+      body: summaryRows,
+      theme: "striped",
+      headStyles: { fillColor: [30, 30, 30], textColor: 255, fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      columnStyles: { 1: { halign: "right" } },
+      margin: { left: 14, right: 14 },
+      tableWidth: 100,
+    });
 
-  autoTable(doc, {
-    startY: afterSummary + 14,
-    head: [txHeaders],
-    body: [...txRows, totaalRow],
-    theme: "striped",
-    headStyles: { fillColor: [30, 30, 30], textColor: 255, fontSize: 8 },
-    bodyStyles: { fontSize: 8 },
-    columnStyles: {
-      5: { halign: "right" },
-      6: { halign: "right" },
-      7: { halign: "right" },
-      8: { halign: "right" },
-    },
-    margin: { left: 14, right: 14 },
-  });
+    const afterSummary = (doc as any).lastAutoTable?.finalY ?? 80;
 
-  doc.save(`VWB_Jaaroverzicht_${year}.pdf`);
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.text("Transacties", 14, afterSummary + 10);
+
+    const txHeaders = [
+      "Datum",
+      "Asset",
+      "Ticker",
+      "Type",
+      "Sectie",
+      "Aantal",
+      "Prijs/stuk",
+      "Tx kosten",
+      "Winst/Verlies",
+    ];
+    const txRows = transactions.map((tx) => {
+      const isCommodityRow = !!commodityTickers?.has(tx.assetTicker);
+      return [
+        formatDate(tx.date),
+        tx.assetName,
+        tx.assetTicker,
+        txTypeLabel(tx.transactionType),
+        tx.assetType === AssetType.crypto
+          ? "Crypto"
+          : isCommodityRow
+            ? "Grondstof"
+            : "Aandeel",
+        tx.transactionType === TransactionType.dividend ||
+        isOngoingCostsType(tx.transactionType)
+          ? "—"
+          : formatQuantity(tx.quantity, tx.assetType === AssetType.crypto),
+        tx.transactionType === TransactionType.stakingReward ||
+        tx.transactionType === TransactionType.dividend ||
+        isOngoingCostsType(tx.transactionType)
+          ? "—"
+          : formatEuro(tx.pricePerUnit, 4),
+        tx.fees ? formatEuro(tx.fees) : "—",
+        isOngoingCostsType(tx.transactionType)
+          ? tx.euroValue !== undefined
+            ? formatEuro(-tx.euroValue)
+            : "—"
+          : tx.realizedProfit !== undefined
+            ? formatEuro(tx.realizedProfit)
+            : "—",
+      ];
+    });
+
+    const totalFees = transactions.reduce((s, tx) => s + (tx.fees ?? 0), 0);
+    const totalPnL = transactions.reduce(
+      (s, tx) => s + (tx.realizedProfit ?? 0),
+      0,
+    );
+    const totaalRow = [
+      "Totaal",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      formatEuro(totalFees),
+      formatEuro(totalPnL),
+    ];
+
+    autoTable(doc, {
+      startY: afterSummary + 14,
+      head: [txHeaders],
+      body: [...txRows, totaalRow],
+      theme: "striped",
+      headStyles: { fillColor: [30, 30, 30], textColor: 255, fontSize: 8 },
+      bodyStyles: { fontSize: 8 },
+      columnStyles: {
+        5: { halign: "right" },
+        6: { halign: "right" },
+        7: { halign: "right" },
+        8: { halign: "right" },
+      },
+      margin: { left: 14, right: 14 },
+    });
+
+    // Sectie: Doorgeschoven kosten
+    if (carryforwardHistory && carryforwardHistory.length > 0) {
+      const afterTx = (doc as any).lastAutoTable?.finalY ?? 160;
+      const pageHeight = doc.internal.pageSize.getHeight();
+
+      // Voeg nieuwe pagina toe als er te weinig ruimte is
+      if (afterTx + 30 > pageHeight - 10) {
+        doc.addPage();
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text("Historisch overzicht doorgeschoven kosten", 14, 18);
+
+        const cfHeaders = [
+          "Jaar",
+          "Kosten (dit jaar)",
+          "Verrekend",
+          "Doorgeschoven",
+        ];
+        const cfRows = carryforwardHistory.map((h) => [
+          String(h.year),
+          formatEuro(h.costsThisYear),
+          h.amountSettled > 0.005 ? formatEuro(h.amountSettled) : formatEuro(0),
+          formatEuro(h.cumulativeCarryforward),
+        ]);
+
+        autoTable(doc, {
+          startY: 22,
+          head: [cfHeaders],
+          body: cfRows,
+          theme: "striped",
+          headStyles: { fillColor: [30, 30, 30], textColor: 255, fontSize: 9 },
+          bodyStyles: { fontSize: 9 },
+          columnStyles: {
+            1: { halign: "right" },
+            2: { halign: "right" },
+            3: { halign: "right" },
+          },
+          margin: { left: 14, right: 14 },
+          tableWidth: 140,
+        });
+      } else {
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text("Historisch overzicht doorgeschoven kosten", 14, afterTx + 10);
+
+        const cfHeaders = [
+          "Jaar",
+          "Kosten (dit jaar)",
+          "Verrekend",
+          "Doorgeschoven",
+        ];
+        const cfRows = carryforwardHistory.map((h) => [
+          String(h.year),
+          formatEuro(h.costsThisYear),
+          h.amountSettled > 0.005 ? formatEuro(h.amountSettled) : formatEuro(0),
+          formatEuro(h.cumulativeCarryforward),
+        ]);
+
+        autoTable(doc, {
+          startY: afterTx + 14,
+          head: [cfHeaders],
+          body: cfRows,
+          theme: "striped",
+          headStyles: { fillColor: [30, 30, 30], textColor: 255, fontSize: 9 },
+          bodyStyles: { fontSize: 9 },
+          columnStyles: {
+            1: { halign: "right" },
+            2: { halign: "right" },
+            3: { halign: "right" },
+          },
+          margin: { left: 14, right: 14 },
+          tableWidth: 140,
+        });
+      }
+    }
+
+    doc.save(`VWB_Jaaroverzicht_${year}.pdf`);
+  } catch (err) {
+    console.error("PDF export fout:", err);
+    toast.error("PDF export mislukt. Probeer het opnieuw.");
+  }
 }

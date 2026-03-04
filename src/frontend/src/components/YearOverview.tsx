@@ -179,7 +179,13 @@ export function YearOverview({
             variant="outline"
             className="h-8 gap-1.5 text-xs"
             onClick={() =>
-              exportXlsx(selectedYear, stats, yearTxs, commodityTickers)
+              exportXlsx(
+                selectedYear,
+                stats,
+                yearTxs,
+                commodityTickers,
+                carryforwardHistory,
+              )
             }
             title="Exporteren als Excel"
           >
@@ -191,7 +197,13 @@ export function YearOverview({
             variant="outline"
             className="h-8 gap-1.5 text-xs"
             onClick={() =>
-              exportPdf(selectedYear, stats, yearTxs, commodityTickers)
+              exportPdf(
+                selectedYear,
+                stats,
+                yearTxs,
+                commodityTickers,
+                carryforwardHistory,
+              )
             }
             title="Exporteren als PDF"
           >
