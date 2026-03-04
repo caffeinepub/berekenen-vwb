@@ -152,7 +152,6 @@ export function YearOverview({
     (h) => h.costsThisYear > 0 || h.cumulativeCarryforward > 0,
   );
 
-  const hasActualOngoingCosts = stats.actualOngoingCosts > 0;
   const hasDividend = stats.totalDividend > 0;
   const hasStaking = stats.totalStaking > 0;
   const hasLoanInterest = stats.totalLoanInterest > 0;
@@ -300,17 +299,22 @@ export function YearOverview({
             )
           }
         />
-        {hasActualOngoingCosts && (
-          <StatCard
-            label="Werkelijke lopende kosten"
-            icon={<Percent className="w-4 h-4" />}
-            value={
+        <StatCard
+          label="Werkelijke lopende kosten"
+          icon={<Percent className="w-4 h-4" />}
+          value={
+            stats.actualOngoingCosts > 0 ? (
               <span className="num text-lg font-semibold text-loss">
                 -{formatEuro(stats.actualOngoingCosts)}
               </span>
-            }
-          />
-        )}
+            ) : (
+              <MoneyValue
+                amount={stats.actualOngoingCosts}
+                className="text-lg font-semibold"
+              />
+            )
+          }
+        />
         <StatCard
           label="Netto rendement"
           icon={
@@ -431,7 +435,7 @@ export function YearOverview({
                     {carryforwardYear.etfOngoingCosts > 0.005 && (
                       <div className="flex items-center justify-between py-1.5 text-sm pl-3">
                         <span className="text-muted-foreground">
-                          Lopende kosten ETF
+                          Werkelijke lopende kosten
                         </span>
                         <span className="num text-loss tabular-nums">
                           -{formatEuro(carryforwardYear.etfOngoingCosts)}

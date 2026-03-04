@@ -290,14 +290,7 @@ export function AssetsList({
                       : undefined;
                   return (
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-3 min-w-0">
-                      <MetricCell
-                        label="Stuks in bezit"
-                        value={
-                          <span className="num font-medium">
-                            {formatQuantity(fifo.currentQuantity, isCrypto)}
-                          </span>
-                        }
-                      />
+                      {/* Primary financial tiles — in specified order */}
                       <MetricCell
                         label="Inleg"
                         value={
@@ -317,37 +310,6 @@ export function AssetsList({
                         }
                       />
                       <MetricCell
-                        label="Ongerealiseerd"
-                        value={
-                          <ReturnValue
-                            amount={fifo.unrealized}
-                            percentage={
-                              fifo.netInvested > 0
-                                ? (fifo.unrealized / fifo.netInvested) * 100
-                                : undefined
-                            }
-                            className="font-medium"
-                          />
-                        }
-                      />
-                      <MetricCell
-                        label="Gerealiseerd"
-                        value={
-                          <ReturnValue
-                            amount={fifo.realized}
-                            className="font-medium"
-                          />
-                        }
-                      />
-                      <MetricCell
-                        label="Huidige prijs"
-                        value={
-                          <span className="num text-muted-foreground">
-                            {formatEuro(asset.currentPrice, 4)}
-                          </span>
-                        }
-                      />
-                      <MetricCell
                         label="Transactiekosten"
                         value={
                           totalTxFees > 0 ? (
@@ -361,6 +323,7 @@ export function AssetsList({
                           )
                         }
                       />
+                      {/* Werkelijke lopende kosten — always shown for stock assets (not commodities) */}
                       {isStock && !isCommodityAsset && (
                         <MetricCell
                           label="Werkelijke lopende kosten"
@@ -387,6 +350,7 @@ export function AssetsList({
                           />
                         }
                       />
+                      {/* Lopende kosten TER — after Totaal rendement, only if TER configured */}
                       {isStock &&
                         !isCommodityAsset &&
                         hasTer &&
@@ -400,6 +364,46 @@ export function AssetsList({
                             }
                           />
                         )}
+                      {/* Secondary tiles */}
+                      <MetricCell
+                        label="Stuks in bezit"
+                        value={
+                          <span className="num font-medium">
+                            {formatQuantity(fifo.currentQuantity, isCrypto)}
+                          </span>
+                        }
+                      />
+                      <MetricCell
+                        label="Gerealiseerd"
+                        value={
+                          <ReturnValue
+                            amount={fifo.realized}
+                            className="font-medium"
+                          />
+                        }
+                      />
+                      <MetricCell
+                        label="Ongerealiseerd"
+                        value={
+                          <ReturnValue
+                            amount={fifo.unrealized}
+                            percentage={
+                              fifo.netInvested > 0
+                                ? (fifo.unrealized / fifo.netInvested) * 100
+                                : undefined
+                            }
+                            className="font-medium"
+                          />
+                        }
+                      />
+                      <MetricCell
+                        label="Huidige prijs"
+                        value={
+                          <span className="num text-muted-foreground">
+                            {formatEuro(asset.currentPrice, 4)}
+                          </span>
+                        }
+                      />
                     </div>
                   );
                 })()}

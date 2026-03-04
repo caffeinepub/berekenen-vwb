@@ -1,28 +1,30 @@
 # PortfolioFlow
 
 ## Current State
-De app ondersteunt transacties van type koop/verkoop/dividend/staking. Een "Lopende kosten"-transactie (ongoingCosts) is frontend-only gedefinieerd als string constante `"ongoingCosts"`. De Motoko backend heeft dit type **niet** in de `TransactionType` union, waardoor het opslaan mislukt met een foutmelding. De frontend berekeningen (werkelijke lopende kosten, carryforward) zijn al correct opgezet maar kunnen nooit data bevatten omdat het opslaan mislukt.
+- Dashboard (tab Aandelen) toont een hoofdtegel "Totale lopende kosten" (berekend op basis van TER % × actuele waarde), maar geen tegel "Werkelijke lopende kosten".
+- In `Dashboard.tsx` wordt `totalOngoingCosts` doorgegeven als TER-berekening, niet als som van "Lopende kosten"-transacties.
+- De `computeSummary`-functie in `Dashboard.tsx` berekent `totalReturn` als bruto rendement zonder aftrek van transactiekosten of werkelijke lopende kosten.
+- In `TransactionHistory.tsx` toont de kolom "Kosten" alleen `tx.fees`. Voor een "Lopende kosten"-transactie (`ongoingCosts`) is `tx.fees` leeg/undefined → streepje.
+- In `AddAssetDialog.tsx` wordt bij `handleSelectStock` de `hasOngoingCosts` altijd gereset naar `false` wanneer een zoekresultaat geselecteerd wordt (zelfs als type "etf" is). Dit zorgt ervoor dat de indicatie na selectie verdwijnt.
+- `App.tsx` berekent `totalOngoingCosts` als TER-berekening (percentage × waarde), maar de tegel heet "Totale lopende kosten" i.p.v. "Lopende kosten (TER)".
 
 ## Requested Changes (Diff)
 
 ### Add
-- `#ongoingCosts` variant aan Motoko `TransactionType` union
-- `ongoingCosts` aan frontend `TransactionType` enum in `backend.d.ts`
+- Nieuwe prop `totalActualOngoingCosts` in `Dashboard.tsx` voor de tegel "Werkelijke lopende kosten" (som van "Lopende kosten"-transacties).
+- In `App.tsx`: berekening van `totalActualOngoingCosts` als som van alle `ongoingCosts`-transacties bij stockAssets.
 
 ### Modify
-- Motoko `TransactionType` type uitbreiden met `#ongoingCosts`
-- `backend.d.ts` `TransactionType` enum uitbreiden met `ongoingCosts = "ongoingCosts"`
-- `transactionTypes.ts`: `TX_ONGOING_COSTS` en `isOngoingCostsType` aanpassen om de echte enum-waarde te gebruiken (geen cast meer nodig)
-- `AddTransactionDialog.tsx`: gebruik `TransactionType.ongoingCosts` i.p.v. de cast-workaround
-- `YearOverview.tsx`, `yearStats.ts`, `carryforward.ts`: controleren of de isOngoingCostsType checks nog werken met de echte enum
+- `Dashboard.tsx`: Hernoem tegel "Totale lopende kosten" naar "Lopende kosten (TER)". Voeg tegel "Werkelijke lopende kosten" toe (toont `totalActualOngoingCosts`). Pas `computeSummary` aan zodat `totalReturn` = bruto rendement − transactiekosten − werkelijke lopende kosten.
+- `App.tsx`: Geef `totalActualOngoingCosts` door aan `<Dashboard>`. Pas `totalOngoingCosts` naam aan voor de TER-berekening.
+- `TransactionHistory.tsx`: In de kolom "Kosten" — voor een `ongoingCosts`-transactie, toon `tx.euroValue` als het bedrag (i.p.v. `tx.fees`).
+- `AddAssetDialog.tsx`: Bij `handleSelectStock`, reset `hasOngoingCosts` NIET bij ETF-type. Of beter: bewaar `hasOngoingCosts` onveranderd als het type niet wijzigt. Zorg dat wanneer het instrument_type ETF is, de `hasOngoingCosts` niet automatisch op `false` wordt gezet.
 
 ### Remove
-- De `as unknown as TransactionType` cast-workaround voor ongoingCosts in transactionTypes.ts en AddTransactionDialog.tsx
+- Geen bestaande features verwijderen.
 
 ## Implementation Plan
-1. Motoko `main.mo`: voeg `#ongoingCosts` toe aan `TransactionType` union (publiek en intern)
-2. `backend.d.ts`: voeg `ongoingCosts = "ongoingCosts"` toe aan `TransactionType` enum
-3. `transactionTypes.ts`: gebruik `TransactionType.ongoingCosts` direct, verwijder cast
-4. `AddTransactionDialog.tsx`: gebruik `TransactionType.ongoingCosts` i.p.v. `TX_ONGOING_COSTS` cast
-5. Valideer dat `isOngoingCostsType` check in alle utils correct werkt
-6. Typecheck en build
+1. `Dashboard.tsx`: voeg prop `totalActualOngoingCosts` toe; hernoem "Totale lopende kosten" naar "Lopende kosten (TER)"; voeg tegel "Werkelijke lopende kosten" toe; pas `computeSummary` aan om transactiekosten en werkelijke lopende kosten af te trekken van `totalReturn`.
+2. `App.tsx`: voeg `totalActualOngoingCosts`-berekening toe (som ongoingCosts transacties uit stockAssets); geef door aan `<Dashboard>`.
+3. `TransactionHistory.tsx`: in de "Kosten" kolom, voor ongoingCosts type gebruik `tx.euroValue ?? tx.fees` als weergavewaarde.
+4. `AddAssetDialog.tsx`: bij `handleSelectStock`, zet `hasOngoingCosts` niet terug op `false` — behoud de huidige waarde of zet hem op basis van `detectedType === "etf"` (maar reset hem niet onnodig).

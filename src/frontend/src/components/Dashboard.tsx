@@ -18,11 +18,17 @@ interface DashboardProps {
   isLoading: boolean;
   /** When provided, a "Totale transactiekosten" card is shown */
   totalTransactionCosts?: number;
-  /** When provided (stocks only), a "Totale lopende kosten" card is shown */
+  /** When provided (stocks only), a "Lopende kosten (TER)" card is shown — indicative, based on TER % × current value */
   totalOngoingCosts?: number;
+  /** When provided (stocks only), a "Werkelijke lopende kosten" card is shown — sum of ongoingCosts transactions */
+  totalActualOngoingCosts?: number;
 }
 
-function computeSummary(assets: AssetView[]): PortfolioSummary {
+function computeSummary(
+  assets: AssetView[],
+  txCosts = 0,
+  actualOngoingCosts = 0,
+): PortfolioSummary {
   let totalInvested = 0;
   let totalCurrentValue = 0;
   let totalRealized = 0;
@@ -36,7 +42,9 @@ function computeSummary(assets: AssetView[]): PortfolioSummary {
     totalUnrealized += fifo.unrealized;
   }
 
-  const totalReturn = totalRealized + totalUnrealized;
+  // Totaal rendement = bruto rendement − transactiekosten − werkelijke lopende kosten
+  const grossReturn = totalRealized + totalUnrealized;
+  const totalReturn = grossReturn - txCosts - actualOngoingCosts;
   const totalReturnPct =
     totalInvested > 0 ? (totalReturn / totalInvested) * 100 : 0;
 
@@ -89,14 +97,20 @@ export function Dashboard({
   isLoading,
   totalTransactionCosts,
   totalOngoingCosts,
+  totalActualOngoingCosts,
 }: DashboardProps) {
   const showTxCosts =
     totalTransactionCosts !== undefined && totalTransactionCosts > 0;
   const showOngoingCosts =
     totalOngoingCosts !== undefined && totalOngoingCosts > 0;
+  const showActualOngoingCosts =
+    totalActualOngoingCosts !== undefined && totalActualOngoingCosts > 0;
 
   // How many extra cost cards will be shown
-  const extraCards = (showTxCosts ? 1 : 0) + (showOngoingCosts ? 1 : 0);
+  const extraCards =
+    (showTxCosts ? 1 : 0) +
+    (showActualOngoingCosts ? 1 : 0) +
+    (showOngoingCosts ? 1 : 0);
   const totalCards = 5 + extraCards;
 
   // Fixed responsive grid: max 4 columns on large screens, responsive on smaller
@@ -120,7 +134,11 @@ export function Dashboard({
     );
   }
 
-  const summary = computeSummary(assets);
+  const summary = computeSummary(
+    assets,
+    totalTransactionCosts ?? 0,
+    totalActualOngoingCosts ?? 0,
+  );
   const returnIsPositive = summary.totalReturn > 0.005;
   const returnIsNegative = summary.totalReturn < -0.005;
 
@@ -209,7 +227,7 @@ export function Dashboard({
       />
       {showTxCosts && (
         <SummaryCard
-          label="Totale transactiekosten"
+          label="Transactiekosten"
           icon={<Receipt className="w-4 h-4" />}
           value={
             <span className="text-xl font-semibold text-loss">
@@ -219,9 +237,21 @@ export function Dashboard({
           delay={250}
         />
       )}
+      {showActualOngoingCosts && (
+        <SummaryCard
+          label="Werkelijke lopende kosten"
+          icon={<Receipt className="w-4 h-4" />}
+          value={
+            <span className="text-xl font-semibold text-loss">
+              -{formatEuro(totalActualOngoingCosts!)}
+            </span>
+          }
+          delay={280}
+        />
+      )}
       {showOngoingCosts && (
         <SummaryCard
-          label="Totale lopende kosten"
+          label="Lopende kosten (TER)"
           icon={<Receipt className="w-4 h-4" />}
           value={
             <span className="text-xl font-semibold text-loss">

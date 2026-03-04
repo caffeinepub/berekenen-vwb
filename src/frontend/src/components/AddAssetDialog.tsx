@@ -162,9 +162,9 @@ export function AddAssetDialog({
       name: result.instrument_name,
       ticker: result.symbol,
       assetType: detectedType,
-      // Clear TER/ongoing costs when type changes
-      hasOngoingCosts: false,
-      ter: "",
+      // Only reset TER/ongoing costs when switching away from ETF to stock (not ETF→ETF)
+      hasOngoingCosts: detectedType === "etf" ? p.hasOngoingCosts : false,
+      ter: detectedType === "etf" ? p.ter : "",
     }));
     // Persist MIC code so usePriceRefresh can use it later
     if (result.mic_code) {

@@ -9,11 +9,11 @@ import Iter "mo:core/Iter";
 import Runtime "mo:core/Runtime";
 import Principal "mo:core/Principal";
 import MixinAuthorization "authorization/MixinAuthorization";
-import Migration "migration";
+
 import AccessControl "authorization/access-control";
 
 // Specify the data migration function in with-clause
-(with migration = Migration.run)
+
 actor {
   // Public type definitions
   type AssetType = {

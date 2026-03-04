@@ -28,6 +28,7 @@ import { Sidebar } from "./components/layout/Sidebar";
 import { AppProvider, useAppContext } from "./context/AppContext";
 import { useInternetIdentity } from "./hooks/useInternetIdentity";
 import { calculateFifo } from "./utils/fifo";
+import { isOngoingCostsType } from "./utils/transactionTypes";
 
 function AppContent() {
   const {
@@ -78,7 +79,7 @@ function AppContent() {
     );
   }, [activeSection, stockAssets, cryptoAssets, commodityAssets]);
 
-  // Compute total ongoing costs (TER) for stocks only — based on current value
+  // Compute total ongoing costs (TER) for stocks only — based on current value (indicative)
   const totalOngoingCosts = useMemo(() => {
     if (activeSection !== "stocks") return 0;
     return stockAssets.reduce((sum, a) => {
@@ -97,6 +98,23 @@ function AppContent() {
       return sum + currentValue * (terValue / 100);
     }, 0);
   }, [activeSection, stockAssets, terMap, ongoingCostsMap, commodityTickers]);
+
+  // Compute werkelijke lopende kosten — som van alle "Lopende kosten"-transacties bij stockAssets
+  const totalActualOngoingCosts = useMemo(() => {
+    if (activeSection !== "stocks") return 0;
+    return stockAssets.reduce((sum, a) => {
+      return (
+        sum +
+        a.transactions.reduce(
+          (s, tx) =>
+            isOngoingCostsType(tx.transactionType)
+              ? s + (tx.euroValue ?? 0)
+              : s,
+          0,
+        )
+      );
+    }, 0);
+  }, [activeSection, stockAssets]);
 
   const SECTION_META: Record<
     string,
@@ -282,6 +300,11 @@ function AppContent() {
                         activeSection === "crypto" ||
                         activeSection === "commodities"
                           ? totalTransactionCosts
+                          : undefined
+                      }
+                      totalActualOngoingCosts={
+                        activeSection === "stocks"
+                          ? totalActualOngoingCosts
                           : undefined
                       }
                       totalOngoingCosts={

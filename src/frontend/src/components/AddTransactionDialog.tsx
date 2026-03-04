@@ -226,9 +226,11 @@ export function AddTransactionDialog({
       const dateObj = dateInputToDate(form.date);
       const dateBigint = dateToBigintNano(dateObj);
       try {
+        // Use TransactionType.ongoingCosts directly; omit hasOngoingCosts to avoid
+        // Candid serialization issues with optional ?Bool field
         await addTransaction.mutateAsync({
           asset: form.ticker,
-          transactionType: TX_ONGOING_COSTS,
+          transactionType: TransactionType.ongoingCosts,
           date: dateBigint,
           quantity: 0,
           pricePerUnit: 0,
@@ -238,7 +240,8 @@ export function AddTransactionDialog({
         });
         toast.success("Lopende kosten toegevoegd");
         setOpen(false);
-      } catch {
+      } catch (err) {
+        console.error("ongoingCosts save error:", err);
         toast.error("Fout bij het toevoegen van lopende kosten");
       }
       return;

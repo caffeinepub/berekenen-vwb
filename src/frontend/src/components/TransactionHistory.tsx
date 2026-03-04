@@ -263,7 +263,13 @@ export function TransactionHistory({
                       )}
                     </td>
                     <td className="py-2.5 pr-4 text-right num text-muted-foreground">
-                      {tx.fees ? formatEuro(tx.fees) : "—"}
+                      {isOngoingCostsType(tx.transactionType)
+                        ? tx.euroValue !== undefined && tx.euroValue > 0
+                          ? formatEuro(tx.euroValue)
+                          : "—"
+                        : tx.fees
+                          ? formatEuro(tx.fees)
+                          : "—"}
                     </td>
                     <td className="py-2.5 pr-4 text-right">
                       {tx.realizedProfit !== undefined ? (
