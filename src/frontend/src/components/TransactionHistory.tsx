@@ -223,6 +223,9 @@ export function TransactionHistory({
                     Prijs/stuk
                   </th>
                   <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Totaal
+                  </th>
+                  <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     Kosten
                   </th>
                   <th className="text-right py-2 pr-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
@@ -260,6 +263,15 @@ export function TransactionHistory({
                         <span className="text-muted-foreground">—</span>
                       ) : (
                         formatEuro(tx.pricePerUnit, 6)
+                      )}
+                    </td>
+                    <td className="py-2.5 pr-4 text-right num">
+                      {tx.transactionType === TransactionType.stakingReward ||
+                      tx.transactionType === TransactionType.dividend ||
+                      isOngoingCostsType(tx.transactionType) ? (
+                        <span className="text-muted-foreground">—</span>
+                      ) : (
+                        formatEuro(tx.quantity * tx.pricePerUnit)
                       )}
                     </td>
                     <td className="py-2.5 pr-4 text-right num text-muted-foreground">

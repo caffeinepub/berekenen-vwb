@@ -313,6 +313,7 @@ export function useUserSettings() {
         } else {
           next[ticker] = pct;
         }
+        terMapRef.current = next; // sync ref before debounced save
         localStorage.setItem(TER_KEY, JSON.stringify(next));
         debouncedSaveRef.current(buildPayload({ terMap: next }));
         return next;
@@ -330,6 +331,7 @@ export function useUserSettings() {
         } else {
           next[ticker] = true;
         }
+        ongoingCostsMapRef.current = next; // sync ref before debounced save
         localStorage.setItem(ONGOING_COSTS_KEY, JSON.stringify(next));
         debouncedSaveRef.current(buildPayload({ ongoingCostsMap: next }));
         return next;
@@ -341,6 +343,7 @@ export function useUserSettings() {
   const updateCommodityTickers = useCallback(
     (tickers: string[]) => {
       setCommodityTickers(tickers);
+      commodityTickersRef.current = tickers; // sync ref before debounced save
       localStorage.setItem(COMMODITY_TICKERS_KEY, JSON.stringify(tickers));
       debouncedSaveRef.current(buildPayload({ commodityTickers: tickers }));
     },
@@ -350,6 +353,7 @@ export function useUserSettings() {
   const updateTwelveDataApiKey = useCallback(
     (key: string) => {
       setTwelveDataApiKeyState(key);
+      twelveDataApiKeyRef.current = key; // sync ref before debounced save
       localStorage.setItem(API_KEY_STORAGE, key);
       debouncedSaveRef.current(buildPayload({ twelveDataApiKey: key }));
     },

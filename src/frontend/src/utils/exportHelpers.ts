@@ -1,5 +1,3 @@
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
 import { toast } from "sonner";
 import { AssetType, TransactionType } from "../backend.d";
 import type { CarryforwardHistory } from "./carryforward";
@@ -161,13 +159,61 @@ export async function exportXlsx(
   XLSX.writeFile(wb, `VWB_Jaaroverzicht_${year}.xlsx`);
 }
 
-export function exportPdf(
+// Helper: load jsPDF and jspdf-autotable via CDN script tags (UMD pattern)
+async function loadJsPdf(): Promise<{ jsPDF: any; autoTable: any } | null> {
+  return new Promise((resolve) => {
+    // Check if already loaded
+    if ((window as any).jspdf?.jsPDF) {
+      resolve({
+        jsPDF: (window as any).jspdf.jsPDF,
+        autoTable: (doc: any, options: any) => doc.autoTable(options),
+      });
+      return;
+    }
+
+    const script1 = document.createElement("script");
+    script1.src =
+      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
+    script1.onload = () => {
+      const script2 = document.createElement("script");
+      script2.src =
+        "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js";
+      script2.onload = () => {
+        const jsPDFClass = (window as any).jspdf?.jsPDF;
+        if (jsPDFClass) {
+          resolve({
+            jsPDF: jsPDFClass,
+            autoTable: (doc: any, options: any) => doc.autoTable(options),
+          });
+        } else {
+          resolve(null);
+        }
+      };
+      script2.onerror = () => resolve(null);
+      document.head.appendChild(script2);
+    };
+    script1.onerror = () => resolve(null);
+    document.head.appendChild(script1);
+  });
+}
+
+export async function exportPdf(
   year: number,
   stats: YearStats,
   transactions: YearTransaction[],
   commodityTickers?: Set<string>,
   carryforwardHistory?: CarryforwardHistory[],
 ) {
+  const libs = await loadJsPdf();
+  if (!libs) {
+    toast.error(
+      "PDF export niet beschikbaar: bibliotheek kon niet worden geladen",
+    );
+    return;
+  }
+
+  const { jsPDF, autoTable } = libs;
+
   try {
     const doc = new jsPDF({
       orientation: "landscape",

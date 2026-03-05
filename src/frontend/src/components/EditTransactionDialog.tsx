@@ -74,6 +74,9 @@ export function EditTransactionDialog({
       transaction.euroValue != null
         ? String(transaction.euroValue)
         : "",
+    // Existing transactions always have a pricePerUnit — start in perUnit mode
+    priceMode: "perUnit" as "perUnit" | "total",
+    totalAmount: "",
   });
   const updateTransaction = useUpdateTransaction();
   const sellPriceAutoFilled = useRef(false);
@@ -82,6 +85,9 @@ export function EditTransactionDialog({
   const isStaking = form.transactionType === TransactionType.stakingReward;
   const isDividend = form.transactionType === TransactionType.dividend;
   const isOngoingCosts = isOngoingCostsType(form.transactionType);
+  const isBuyOrSell =
+    form.transactionType === TransactionType.buy ||
+    form.transactionType === TransactionType.sell;
 
   // ETF with ongoing costs enabled = may add/edit "Lopende kosten" transaction type
   const isEtfWithOngoingCosts = !!(
@@ -112,6 +118,8 @@ export function EditTransactionDialog({
           transaction.euroValue != null
             ? String(transaction.euroValue)
             : "",
+        priceMode: "perUnit",
+        totalAmount: "",
       });
     }
     setOpen(isOpen);
@@ -125,12 +133,19 @@ export function EditTransactionDialog({
       !sellPriceAutoFilled.current &&
       (!form.pricePerUnit || form.pricePerUnit === "0")
     ) {
-      setForm((p) => ({ ...p, pricePerUnit: String(asset.currentPrice) }));
+      if (form.priceMode === "perUnit") {
+        setForm((p) => ({ ...p, pricePerUnit: String(asset.currentPrice) }));
+      }
       sellPriceAutoFilled.current = true;
     } else if (form.transactionType !== TransactionType.sell) {
       sellPriceAutoFilled.current = false;
     }
-  }, [form.transactionType, asset.currentPrice, form.pricePerUnit]);
+  }, [
+    form.transactionType,
+    asset.currentPrice,
+    form.pricePerUnit,
+    form.priceMode,
+  ]);
 
   // Calculate available balance for sell validation (excluding current transaction if it was a buy)
   const otherTransactions = asset.transactions.filter((_, i) => {
@@ -148,6 +163,23 @@ export function EditTransactionDialog({
     availableBalance !== null &&
     !Number.isNaN(quantity) &&
     quantity > availableBalance;
+
+  const handlePriceModeChange = (mode: "perUnit" | "total") => {
+    setForm((p) => ({
+      ...p,
+      priceMode: mode,
+      // Reset the other field to avoid confusion
+      pricePerUnit: mode === "perUnit" ? "" : p.pricePerUnit,
+      totalAmount: mode === "total" ? "" : p.totalAmount,
+    }));
+    sellPriceAutoFilled.current = false;
+  };
+
+  const getTotalAmountLabel = () => {
+    if (isCommodity) return "Totaal bedrag eenheden (€)";
+    if (isCrypto) return "Totaal bedrag (€)";
+    return "Totaal aankoopbedrag (€)";
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,12 +257,25 @@ export function EditTransactionDialog({
       return;
     }
 
-    const price = isStaking
-      ? 0
-      : Number.parseFloat(form.pricePerUnit.replace(",", "."));
-    if (!isStaking && (Number.isNaN(price) || price < 0)) {
-      toast.error("Ongeldige prijs per stuk");
-      return;
+    // Determine pricePerUnit based on priceMode
+    let finalPricePerUnit: number;
+    if (isStaking) {
+      finalPricePerUnit = 0;
+    } else if (isBuyOrSell && form.priceMode === "total") {
+      const total = Number.parseFloat(form.totalAmount.replace(",", "."));
+      if (Number.isNaN(total) || total <= 0) {
+        toast.error("Ongeldig totaal aankoopbedrag");
+        return;
+      }
+      finalPricePerUnit = total / qty;
+    } else {
+      finalPricePerUnit = Number.parseFloat(
+        form.pricePerUnit.replace(",", "."),
+      );
+      if (Number.isNaN(finalPricePerUnit) || finalPricePerUnit < 0) {
+        toast.error("Ongeldige prijs per stuk");
+        return;
+      }
     }
 
     const fees = form.fees
@@ -268,7 +313,7 @@ export function EditTransactionDialog({
           transactionType: form.transactionType,
           date: dateBigint,
           quantity: qty,
-          pricePerUnit: isStaking ? 0 : price,
+          pricePerUnit: isStaking ? 0 : finalPricePerUnit,
           fees: fees,
           euroValue: isStaking ? stakingEuro : undefined,
           notes: form.notes.trim() || undefined,
@@ -409,25 +454,83 @@ export function EditTransactionDialog({
             </div>
           )}
 
-          {/* Price per unit — not for staking, dividend, or ongoingCosts */}
-          {!isStaking && !isDividend && !isOngoingCosts && (
+          {/* Price mode toggle — only for buy/sell (not staking, dividend, ongoingCosts) */}
+          {isBuyOrSell && !isStaking && (
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="edit-tx-price">
-                {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"}{" "}
-                <span className="text-loss">*</span>
+              <Label>Invoermethode</Label>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={form.priceMode === "perUnit" ? "default" : "outline"}
+                  className="flex-1 text-xs"
+                  onClick={() => handlePriceModeChange("perUnit")}
+                  data-ocid="edit-tx.toggle"
+                >
+                  Prijs per stuk
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={form.priceMode === "total" ? "default" : "outline"}
+                  className="flex-1 text-xs"
+                  onClick={() => handlePriceModeChange("total")}
+                  data-ocid="edit-tx.toggle"
+                >
+                  Totaal bedrag
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Price per unit — not for staking, dividend, or ongoingCosts; hidden when priceMode === 'total' */}
+          {!isStaking &&
+            !isDividend &&
+            !isOngoingCosts &&
+            form.priceMode === "perUnit" && (
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-tx-price">
+                  {isCommodity ? "Prijs per eenheid (€)" : "Prijs per stuk (€)"}{" "}
+                  <span className="text-loss">*</span>
+                </Label>
+                <Input
+                  id="edit-tx-price"
+                  type="number"
+                  step="0.000001"
+                  min="0"
+                  placeholder="0,000000"
+                  value={form.pricePerUnit}
+                  onChange={(e) => {
+                    sellPriceAutoFilled.current = true; // user manually edited
+                    setForm((p) => ({ ...p, pricePerUnit: e.target.value }));
+                  }}
+                  required={
+                    !isStaking &&
+                    !isDividend &&
+                    !isOngoingCosts &&
+                    form.priceMode === "perUnit"
+                  }
+                />
+              </div>
+            )}
+
+          {/* Total amount — only shown when priceMode === 'total' and buy/sell */}
+          {isBuyOrSell && !isStaking && form.priceMode === "total" && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit-tx-total-amount">
+                {getTotalAmountLabel()} <span className="text-loss">*</span>
               </Label>
               <Input
-                id="edit-tx-price"
+                id="edit-tx-total-amount"
                 type="number"
-                step="0.000001"
-                min="0"
-                placeholder="0,000000"
-                value={form.pricePerUnit}
-                onChange={(e) => {
-                  sellPriceAutoFilled.current = true; // user manually edited
-                  setForm((p) => ({ ...p, pricePerUnit: e.target.value }));
-                }}
-                required={!isStaking && !isDividend && !isOngoingCosts}
+                step="0.01"
+                min="0.01"
+                placeholder="0,00"
+                value={form.totalAmount}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, totalAmount: e.target.value }))
+                }
+                required
               />
             </div>
           )}
