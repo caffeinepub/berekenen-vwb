@@ -3,6 +3,7 @@ import { Toaster } from "@/components/ui/sonner";
 import {
   CalendarDays,
   Coins,
+  FileUp,
   Handshake,
   LayoutDashboard,
   Mountain,
@@ -10,11 +11,12 @@ import {
   Settings,
   TrendingUp,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { AssetType } from "./backend.d";
 import { AddAssetDialog } from "./components/AddAssetDialog";
 import { AddCommodityAssetDialog } from "./components/AddCommodityAssetDialog";
 import { AssetsList } from "./components/AssetsList";
+import { CsvImportWizard } from "./components/CsvImportWizard";
 import { Dashboard } from "./components/Dashboard";
 import { LoansPage } from "./components/LoansPage";
 import { LoginPage } from "./components/LoginPage";
@@ -50,6 +52,11 @@ function AppContent() {
     setUserName,
     isActorReady,
   } = useAppContext();
+
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
+  const [csvImportAssetType, setCsvImportAssetType] = useState<
+    "stock" | "crypto"
+  >("stock");
 
   // Show onboarding if actor is ready but no name set yet
   const showOnboarding = isActorReady && userName.trim() === "";
@@ -245,36 +252,64 @@ function AppContent() {
                   </div>
 
                   {activeSection === "stocks" && (
-                    <AddAssetDialog
-                      updateOngoingCosts={updateOngoingCosts}
-                      updateTer={updateTer}
-                      allowedAssetTypes={["stock", "etf"]}
-                      apiKey={twelveDataApiKey}
-                    >
+                    <div className="flex items-center gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         className="h-8 gap-1.5 text-xs"
+                        onClick={() => {
+                          setCsvImportAssetType("stock");
+                          setCsvImportOpen(true);
+                        }}
+                        data-ocid="stocks.upload_button"
                       >
-                        <Plus className="w-3.5 h-3.5" /> Asset toevoegen
+                        <FileUp className="w-3.5 h-3.5" /> Importeer transacties
                       </Button>
-                    </AddAssetDialog>
+                      <AddAssetDialog
+                        updateOngoingCosts={updateOngoingCosts}
+                        updateTer={updateTer}
+                        allowedAssetTypes={["stock", "etf"]}
+                        apiKey={twelveDataApiKey}
+                      >
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5 text-xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Asset toevoegen
+                        </Button>
+                      </AddAssetDialog>
+                    </div>
                   )}
                   {activeSection === "crypto" && (
-                    <AddAssetDialog
-                      updateOngoingCosts={updateOngoingCosts}
-                      updateTer={updateTer}
-                      forcedAssetType="crypto"
-                      apiKey={twelveDataApiKey}
-                    >
+                    <div className="flex items-center gap-2">
                       <Button
                         size="sm"
                         variant="outline"
                         className="h-8 gap-1.5 text-xs"
+                        onClick={() => {
+                          setCsvImportAssetType("crypto");
+                          setCsvImportOpen(true);
+                        }}
+                        data-ocid="crypto.upload_button"
                       >
-                        <Plus className="w-3.5 h-3.5" /> Asset toevoegen
+                        <FileUp className="w-3.5 h-3.5" /> Importeer transacties
                       </Button>
-                    </AddAssetDialog>
+                      <AddAssetDialog
+                        updateOngoingCosts={updateOngoingCosts}
+                        updateTer={updateTer}
+                        forcedAssetType="crypto"
+                        apiKey={twelveDataApiKey}
+                      >
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5 text-xs"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Asset toevoegen
+                        </Button>
+                      </AddAssetDialog>
+                    </div>
                   )}
                   {activeSection === "commodities" && (
                     <AddCommodityAssetDialog assets={assets}>
@@ -335,6 +370,14 @@ function AppContent() {
           </div>
         </main>
       </div>
+
+      {/* CSV Import Wizard */}
+      <CsvImportWizard
+        assetType={csvImportAssetType}
+        assets={csvImportAssetType === "stock" ? stockAssets : cryptoAssets}
+        open={csvImportOpen}
+        onOpenChange={setCsvImportOpen}
+      />
 
       <MobileNav />
 
