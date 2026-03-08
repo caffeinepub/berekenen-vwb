@@ -28,6 +28,8 @@ import { cn } from "@/lib/utils";
 import {
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   FileText,
   Loader2,
   Upload,
@@ -313,6 +315,9 @@ export function CsvImportWizard({
     kosten: "",
   });
 
+  // Step 4: prijs type toggle
+  const [prijsType, setPrijsType] = useState<"perStuk" | "totaal">("perStuk");
+
   // Step 5: type translations (csvValue → transactionType)
   const [typeTranslationState, setTypeTranslationState] = useState<
     Record<string, string>
@@ -320,6 +325,8 @@ export function CsvImportWizard({
 
   // Step 6: import state
   const [isImporting, setIsImporting] = useState(false);
+  const [editableRows, setEditableRows] = useState<EditableImportRow[]>([]);
+  const [duplicatesExpanded, setDuplicatesExpanded] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLButtonElement>(null);
@@ -534,6 +541,23 @@ export function CsvImportWizard({
     for (const [csvVal, txType] of Object.entries(typeTranslationState)) {
       if (txType) saveTypeTranslation(csvVal, txType);
     }
+    // Build editable rows from the parsed import rows
+    const rows = buildImportRows();
+    setEditableRows(
+      rows.map((row, idx) => ({
+        ...row,
+        id: idx,
+        deleted: false,
+        dateStr: row.date
+          ? row.date.toLocaleDateString("nl-NL", {
+              day: "2-digit",
+              month: "2-digit",
+              year: "numeric",
+            })
+          : "",
+      })),
+    );
+    setDuplicatesExpanded(false);
     setStep(6);
   };
 
@@ -552,6 +576,12 @@ export function CsvImportWizard({
     isDuplicate: boolean;
     isValid: boolean;
     errorReason?: string;
+  }
+
+  interface EditableImportRow extends ImportRow {
+    id: number;
+    deleted: boolean;
+    dateStr: string;
   }
 
   const buildImportRows = (): ImportRow[] => {
@@ -581,9 +611,15 @@ export function CsvImportWizard({
       const quantity = parseNum(
         fieldMappingState.aantal ? (row[fieldMappingState.aantal] ?? "") : "",
       );
-      const pricePerUnit = parseNum(
+      const rawPrice = parseNum(
         fieldMappingState.prijs ? (row[fieldMappingState.prijs] ?? "") : "",
       );
+      const pricePerUnit =
+        prijsType === "totaal"
+          ? quantity > 0
+            ? rawPrice / quantity
+            : 0
+          : rawPrice;
       const fees = parseNum(
         fieldMappingState.kosten ? (row[fieldMappingState.kosten] ?? "") : "",
       );
@@ -650,11 +686,29 @@ export function CsvImportWizard({
     return rows;
   };
 
+  // ─── Editable row helpers ─────────────────────────────────────────────────
+
+  const updateEditableRow = (
+    id: number,
+    updates: Partial<EditableImportRow>,
+  ) => {
+    setEditableRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+    );
+  };
+
+  const deleteEditableRow = (id: number) => {
+    setEditableRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, deleted: true } : r)),
+    );
+  };
+
   // ─── Import execution ─────────────────────────────────────────────────────
 
   const handleImport = async () => {
-    const rows = buildImportRows();
-    const toImport = rows.filter((r) => r.isValid && !r.isDuplicate);
+    const toImport = editableRows.filter(
+      (r) => !r.deleted && r.isValid && !r.isDuplicate,
+    );
 
     if (toImport.length === 0) {
       toast.info("Geen nieuwe transacties om te importeren");
@@ -696,7 +750,9 @@ export function CsvImportWizard({
 
     setIsImporting(false);
 
-    const skippedCount = rows.filter((r) => r.isDuplicate).length;
+    const skippedCount = editableRows.filter(
+      (r) => !r.deleted && r.isDuplicate,
+    ).length;
     if (errorCount > 0) {
       toast.error(
         `${importedCount} geïmporteerd, ${skippedCount} overgeslagen, ${errorCount} fout`,
@@ -729,7 +785,10 @@ export function CsvImportWizard({
       prijs: "",
       kosten: "",
     });
+    setPrijsType("perStuk");
     setTypeTranslationState({});
+    setEditableRows([]);
+    setDuplicatesExpanded(false);
   };
 
   const handleOpenChange = (v: boolean) => {
@@ -1035,7 +1094,10 @@ export function CsvImportWizard({
       { key: "type", label: "Type" },
       { key: "datum", label: "Datum" },
       { key: "aantal", label: "Aantal stuks" },
-      { key: "prijs", label: "Prijs per stuk" },
+      {
+        key: "prijs",
+        label: prijsType === "totaal" ? "Totaalbedrag" : "Prijs per stuk",
+      },
       { key: "kosten", label: "Transactiekosten", optional: true },
     ];
 
@@ -1045,81 +1107,122 @@ export function CsvImportWizard({
           Koppel de kolommen uit het bestand aan de velden van de app.
           Automatisch herkende velden worden getoond met een groen vinkje.
         </p>
+
+        {/* Prijs-type toggle — always visible at the top of step 4 */}
+        <div className="p-3 rounded-lg bg-muted/20 border border-border flex flex-col gap-2">
+          <Label className="text-xs text-muted-foreground font-medium">
+            Hoe staat de prijs in het CSV-bestand?
+          </Label>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant={prijsType === "perStuk" ? "default" : "outline"}
+              className="h-7 text-xs px-3"
+              onClick={() => setPrijsType("perStuk")}
+              data-ocid="csv.toggle"
+            >
+              Prijs per stuk
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={prijsType === "totaal" ? "default" : "outline"}
+              className="h-7 text-xs px-3"
+              onClick={() => setPrijsType("totaal")}
+              data-ocid="csv.toggle"
+            >
+              Totaalbedrag
+            </Button>
+          </div>
+          {prijsType === "totaal" && (
+            <p className="text-xs text-muted-foreground">
+              De prijs per stuk wordt automatisch berekend: totaalbedrag ÷
+              aantal stuks.
+            </p>
+          )}
+        </div>
+
         <div className="flex flex-col gap-3">
           {fields.map(({ key, label, optional }) => {
             const mapped = fieldMappingState[key];
             const isDetected = !!mapped;
 
             return (
-              <div
-                key={key}
-                className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border"
-              >
-                <div className="shrink-0">
-                  {isDetected ? (
-                    <Check className="w-4 h-4 text-green-500" />
-                  ) : optional ? (
-                    <span className="text-muted-foreground text-xs">—</span>
-                  ) : (
-                    <X className="w-4 h-4 text-red-500" />
-                  )}
-                </div>
-                <div className="w-36 shrink-0">
-                  <span className="text-sm font-medium">{label}</span>
-                  {optional && (
-                    <span className="text-xs text-muted-foreground ml-1">
-                      (optioneel)
-                    </span>
-                  )}
-                </div>
-                {isDetected ? (
-                  <div className="flex items-center gap-2 flex-1">
-                    <span className="text-sm text-muted-foreground">
-                      gekoppeld aan:
-                    </span>
-                    <span className="font-mono font-semibold text-sm">
-                      {mapped}
-                    </span>
-                    <button
-                      type="button"
-                      className="ml-auto text-muted-foreground hover:text-foreground"
-                      onClick={() =>
-                        setFieldMappingState((prev) => ({ ...prev, [key]: "" }))
-                      }
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+              <div key={key} className="flex flex-col gap-2">
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border border-border">
+                  <div className="shrink-0">
+                    {isDetected ? (
+                      <Check className="w-4 h-4 text-green-500" />
+                    ) : optional ? (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    ) : (
+                      <X className="w-4 h-4 text-red-500" />
+                    )}
                   </div>
-                ) : (
-                  <Select
-                    value={fieldMappingState[key]}
-                    onValueChange={(v) => {
-                      const val = v === "__none__" ? "" : v;
-                      setFieldMappingState((prev) => ({ ...prev, [key]: val }));
-                    }}
-                  >
-                    <SelectTrigger
-                      className="flex-1 h-8 text-sm"
-                      data-ocid="csv.select"
-                    >
-                      <SelectValue
-                        placeholder={
-                          optional ? "Geen (overslaan)" : "Kies kolom…"
+                  <div className="w-36 shrink-0">
+                    <span className="text-sm font-medium">{label}</span>
+                    {optional && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        (optioneel)
+                      </span>
+                    )}
+                  </div>
+                  {isDetected ? (
+                    <div className="flex items-center gap-2 flex-1">
+                      <span className="text-sm text-muted-foreground">
+                        gekoppeld aan:
+                      </span>
+                      <span className="font-mono font-semibold text-sm">
+                        {mapped}
+                      </span>
+                      <button
+                        type="button"
+                        className="ml-auto text-muted-foreground hover:text-foreground"
+                        onClick={() =>
+                          setFieldMappingState((prev) => ({
+                            ...prev,
+                            [key]: "",
+                          }))
                         }
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {optional && (
-                        <SelectItem value="__none__">Geen</SelectItem>
-                      )}
-                      {headers.map((h) => (
-                        <SelectItem key={h} value={h}>
-                          {h}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <Select
+                      value={fieldMappingState[key]}
+                      onValueChange={(v) => {
+                        const val = v === "__none__" ? "" : v;
+                        setFieldMappingState((prev) => ({
+                          ...prev,
+                          [key]: val,
+                        }));
+                      }}
+                    >
+                      <SelectTrigger
+                        className="flex-1 h-8 text-sm"
+                        data-ocid="csv.select"
+                      >
+                        <SelectValue
+                          placeholder={
+                            optional ? "Geen (overslaan)" : "Kies kolom…"
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {optional && (
+                          <SelectItem value="__none__">Geen</SelectItem>
+                        )}
+                        {headers.map((h) => (
+                          <SelectItem key={h} value={h}>
+                            {h}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -1235,102 +1338,353 @@ export function CsvImportWizard({
   };
 
   const renderStep6 = () => {
-    const allRows = buildImportRows();
-    const validRows = allRows.filter((r) => r.isValid);
-    const newRows = validRows.filter((r) => !r.isDuplicate);
-    const duplicateCount = validRows.filter((r) => r.isDuplicate).length;
-    const invalidCount = allRows.filter((r) => !r.isValid).length;
-    const previewRows = newRows.slice(0, 10);
+    const activeRows = editableRows.filter((r) => !r.deleted);
+    const toImportRows = activeRows.filter((r) => r.isValid && !r.isDuplicate);
+    const duplicateRows = activeRows.filter((r) => r.isValid && r.isDuplicate);
+    const invalidRows = activeRows.filter((r) => !r.isValid);
+
+    const typeOptions =
+      assetType === "crypto"
+        ? [
+            { value: "buy", label: "Aankoop" },
+            { value: "sell", label: "Verkoop" },
+            { value: "stakingReward", label: "Staking reward" },
+          ]
+        : [
+            { value: "buy", label: "Aankoop" },
+            { value: "sell", label: "Verkoop" },
+            { value: "dividend", label: "Dividend" },
+            { value: "ongoingCosts", label: "Lopende kosten" },
+          ];
+
+    const isDividendLikeType = (type: string) =>
+      type === "dividend" ||
+      type === "stakingReward" ||
+      type === "ongoingCosts";
 
     return (
       <div className="flex flex-col gap-4">
-        {/* Summary */}
+        {/* Summary tiles */}
         <div className="grid grid-cols-3 gap-3">
           <div className="p-3 rounded-lg bg-muted/40 border border-border text-center">
-            <p className="text-2xl font-bold">{newRows.length}</p>
+            <p className="text-2xl font-bold text-foreground">
+              {toImportRows.length}
+            </p>
             <p className="text-xs text-muted-foreground">te importeren</p>
           </div>
           <div className="p-3 rounded-lg bg-muted/40 border border-border text-center">
             <p className="text-2xl font-bold text-muted-foreground">
-              {duplicateCount}
+              {duplicateRows.length}
             </p>
             <p className="text-xs text-muted-foreground">duplicaten</p>
           </div>
           <div className="p-3 rounded-lg bg-muted/40 border border-border text-center">
             <p className="text-2xl font-bold text-muted-foreground">
-              {invalidCount}
+              {invalidRows.length}
             </p>
             <p className="text-xs text-muted-foreground">ongeldig</p>
           </div>
         </div>
 
-        {newRows.length === 0 ? (
-          <div className="text-center p-8 text-muted-foreground text-sm">
+        {toImportRows.length === 0 && duplicateRows.length === 0 ? (
+          <div
+            className="text-center p-8 text-muted-foreground text-sm"
+            data-ocid="csv.empty_state"
+          >
             Geen nieuwe transacties om te importeren.
           </div>
         ) : (
           <>
-            <p className="text-sm text-muted-foreground">
-              Voorbeeld van de eerste {Math.min(10, newRows.length)}{" "}
-              transacties:
-            </p>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Datum</TableHead>
-                    <TableHead>Asset</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead className="text-right">Aantal</TableHead>
-                    <TableHead className="text-right">Prijs/stuk</TableHead>
-                    <TableHead className="text-right">Kosten</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {previewRows.map((row, idx) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: preview rows are positional by definition
-                    <TableRow key={idx} data-ocid={`csv.row.${idx + 1}`}>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatPreviewDate(row.date)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="font-mono text-xs font-semibold">
-                            {row.ticker}
-                          </span>
-                          <span className="text-xs text-muted-foreground truncate max-w-[120px]">
-                            {row.assetName}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary" className="text-xs">
-                          {TRANSACTION_TYPE_LABELS[row.transactionType] ??
-                            row.transactionType}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right text-sm font-mono">
-                        {row.transactionType === "dividend" ||
-                        row.transactionType === "ongoingCosts" ||
-                        row.transactionType === "stakingReward"
-                          ? "—"
-                          : row.quantity.toFixed(4)}
-                      </TableCell>
-                      <TableCell className="text-right text-sm font-mono">
-                        {row.transactionType === "dividend" ||
-                        row.transactionType === "ongoingCosts" ||
-                        row.transactionType === "stakingReward"
-                          ? formatEuro(row.euroValue)
-                          : formatEuro(row.pricePerUnit, 6)}
-                      </TableCell>
-                      <TableCell className="text-right text-sm font-mono text-muted-foreground">
-                        {row.fees > 0 ? formatEuro(row.fees) : "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+            {toImportRows.length > 0 && (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Controleer en pas de gegevens aan voor de import. Je kunt
+                  waarden bewerken of regels verwijderen.
+                </p>
+                <div className="overflow-x-auto overflow-y-auto max-h-[350px] rounded-lg border border-border">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-card z-10">
+                      <TableRow>
+                        <TableHead className="text-xs py-2 min-w-[110px]">
+                          Datum
+                        </TableHead>
+                        <TableHead className="text-xs py-2 min-w-[100px]">
+                          Asset
+                        </TableHead>
+                        <TableHead className="text-xs py-2 min-w-[130px]">
+                          Type
+                        </TableHead>
+                        <TableHead className="text-xs py-2 min-w-[80px] text-right">
+                          Aantal
+                        </TableHead>
+                        <TableHead className="text-xs py-2 min-w-[100px] text-right">
+                          Prijs/€
+                        </TableHead>
+                        <TableHead className="text-xs py-2 min-w-[80px] text-right">
+                          Kosten
+                        </TableHead>
+                        <TableHead className="text-xs py-2 w-8" />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {toImportRows.map((row, idx) => (
+                        <TableRow
+                          key={row.id}
+                          data-ocid={`csv.row.${idx + 1}`}
+                          className="hover:bg-muted/20"
+                        >
+                          {/* Datum */}
+                          <TableCell className="py-1.5 px-2">
+                            <Input
+                              type="text"
+                              value={row.dateStr}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const parsed = parseDateStr(val);
+                                updateEditableRow(row.id, {
+                                  dateStr: val,
+                                  date: parsed,
+                                  isValid: !!parsed,
+                                  errorReason: parsed
+                                    ? undefined
+                                    : "Ongeldige datum",
+                                });
+                              }}
+                              placeholder="DD-MM-YYYY"
+                              className="h-7 text-xs px-2 font-mono w-[100px]"
+                            />
+                          </TableCell>
+
+                          {/* Asset (read-only) */}
+                          <TableCell className="py-1.5 px-2">
+                            <div className="flex flex-col">
+                              <span className="font-mono text-xs font-semibold leading-tight">
+                                {row.ticker}
+                              </span>
+                              <span className="text-xs text-muted-foreground truncate max-w-[90px]">
+                                {row.assetName}
+                              </span>
+                            </div>
+                          </TableCell>
+
+                          {/* Type */}
+                          <TableCell className="py-1.5 px-2">
+                            <Select
+                              value={row.transactionType}
+                              onValueChange={(v) =>
+                                updateEditableRow(row.id, {
+                                  transactionType: v,
+                                })
+                              }
+                            >
+                              <SelectTrigger className="h-7 text-xs px-2 w-[120px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {typeOptions.map((opt) => (
+                                  <SelectItem
+                                    key={opt.value}
+                                    value={opt.value}
+                                    className="text-xs"
+                                  >
+                                    {opt.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+
+                          {/* Aantal */}
+                          <TableCell className="py-1.5 px-2 text-right">
+                            {isDividendLikeType(row.transactionType) ? (
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
+                            ) : (
+                              <Input
+                                type="number"
+                                step="any"
+                                value={row.quantity === 0 ? "" : row.quantity}
+                                onChange={(e) =>
+                                  updateEditableRow(row.id, {
+                                    quantity:
+                                      Number.parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                                className="h-7 text-xs px-2 text-right w-[75px] font-mono"
+                              />
+                            )}
+                          </TableCell>
+
+                          {/* Prijs per stuk / Euro-waarde */}
+                          <TableCell className="py-1.5 px-2 text-right">
+                            {isDividendLikeType(row.transactionType) ? (
+                              <Input
+                                type="number"
+                                step="any"
+                                value={row.euroValue === 0 ? "" : row.euroValue}
+                                onChange={(e) =>
+                                  updateEditableRow(row.id, {
+                                    euroValue:
+                                      Number.parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                                className="h-7 text-xs px-2 text-right w-[90px] font-mono"
+                                placeholder="€"
+                              />
+                            ) : (
+                              <Input
+                                type="number"
+                                step="any"
+                                value={
+                                  row.pricePerUnit === 0 ? "" : row.pricePerUnit
+                                }
+                                onChange={(e) =>
+                                  updateEditableRow(row.id, {
+                                    pricePerUnit:
+                                      Number.parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                                className="h-7 text-xs px-2 text-right w-[90px] font-mono"
+                                placeholder="€"
+                              />
+                            )}
+                          </TableCell>
+
+                          {/* Kosten */}
+                          <TableCell className="py-1.5 px-2 text-right">
+                            {isDividendLikeType(row.transactionType) ? (
+                              <span className="text-xs text-muted-foreground">
+                                —
+                              </span>
+                            ) : (
+                              <Input
+                                type="number"
+                                step="any"
+                                value={row.fees === 0 ? "" : row.fees}
+                                onChange={(e) =>
+                                  updateEditableRow(row.id, {
+                                    fees:
+                                      Number.parseFloat(e.target.value) || 0,
+                                  })
+                                }
+                                className="h-7 text-xs px-2 text-right w-[75px] font-mono"
+                                placeholder="0"
+                              />
+                            )}
+                          </TableCell>
+
+                          {/* Delete */}
+                          <TableCell className="py-1.5 px-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                              onClick={() => deleteEditableRow(row.id)}
+                              data-ocid={`csv.delete_button.${idx + 1}`}
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+
+            {/* Duplicaten collapsible */}
+            {duplicateRows.length > 0 && (
+              <div className="rounded-lg border border-border overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm bg-muted/30 hover:bg-muted/50 transition-colors"
+                  onClick={() => setDuplicatesExpanded((v) => !v)}
+                >
+                  <span className="font-medium text-muted-foreground">
+                    Duplicaten ({duplicateRows.length}) — worden overgeslagen
+                  </span>
+                  {duplicatesExpanded ? (
+                    <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                  )}
+                </button>
+                {duplicatesExpanded && (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="text-xs py-2">Datum</TableHead>
+                          <TableHead className="text-xs py-2">Asset</TableHead>
+                          <TableHead className="text-xs py-2">Type</TableHead>
+                          <TableHead className="text-xs py-2 text-right">
+                            Aantal
+                          </TableHead>
+                          <TableHead className="text-xs py-2 text-right">
+                            Prijs/€
+                          </TableHead>
+                          <TableHead className="text-xs py-2 w-8" />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {duplicateRows.map((row, idx) => (
+                          <TableRow
+                            key={row.id}
+                            className="opacity-60"
+                            data-ocid={`csv.row.${toImportRows.length + idx + 1}`}
+                          >
+                            <TableCell className="py-1.5 text-xs font-mono">
+                              {formatPreviewDate(row.date)}
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <div className="flex flex-col">
+                                <span className="font-mono text-xs font-semibold">
+                                  {row.ticker}
+                                </span>
+                                <span className="text-xs text-muted-foreground truncate max-w-[90px]">
+                                  {row.assetName}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-1.5">
+                              <Badge variant="outline" className="text-xs">
+                                {TRANSACTION_TYPE_LABELS[row.transactionType] ??
+                                  row.transactionType}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-1.5 text-right text-xs font-mono">
+                              {isDividendLikeType(row.transactionType)
+                                ? "—"
+                                : row.quantity.toFixed(4)}
+                            </TableCell>
+                            <TableCell className="py-1.5 text-right text-xs font-mono">
+                              {isDividendLikeType(row.transactionType)
+                                ? formatEuro(row.euroValue)
+                                : formatEuro(row.pricePerUnit, 6)}
+                            </TableCell>
+                            <TableCell className="py-1.5 px-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                onClick={() => deleteEditableRow(row.id)}
+                                data-ocid={`csv.delete_button.${toImportRows.length + idx + 1}`}
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1343,8 +1697,6 @@ export function CsvImportWizard({
     !!nameColumn && (nameColumnConfirmed || (!nameColumnAuto && !!nameColumn));
 
   const canProceedStep4 = !!fieldMappingState.type && !!fieldMappingState.datum;
-
-  const buildImportRowsForPreview = buildImportRows;
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -1470,8 +1822,8 @@ export function CsvImportWizard({
                 size="sm"
                 disabled={
                   isImporting ||
-                  buildImportRowsForPreview().filter(
-                    (r) => r.isValid && !r.isDuplicate,
+                  editableRows.filter(
+                    (r) => !r.deleted && r.isValid && !r.isDuplicate,
                   ).length === 0
                 }
                 onClick={handleImport}
