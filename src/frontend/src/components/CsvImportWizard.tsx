@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  AlertCircle,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -129,6 +130,8 @@ const FIELD_AUTO_DETECT: Record<FieldName, string[]> = {
     "brokerage",
     "charges",
   ],
+  // dividendBedrag is handled separately — no auto-detect patterns
+  dividendBedrag: [],
 };
 
 const TYPE_AUTO_STOCK: Record<string, string> = {
@@ -313,6 +316,7 @@ export function CsvImportWizard({
     aantal: "",
     prijs: "",
     kosten: "",
+    dividendBedrag: "",
   });
 
   // Step 4: prijs type toggle
@@ -327,6 +331,11 @@ export function CsvImportWizard({
   const [isImporting, setIsImporting] = useState(false);
   const [editableRows, setEditableRows] = useState<EditableImportRow[]>([]);
   const [duplicatesExpanded, setDuplicatesExpanded] = useState(false);
+  const [invalidRowsExpanded, setInvalidRowsExpanded] = useState(false);
+  const [importErrorDetails, setImportErrorDetails] = useState<
+    { ticker: string; dateStr: string; message: string }[]
+  >([]);
+  const [importErrorsExpanded, setImportErrorsExpanded] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLButtonElement>(null);
@@ -354,6 +363,7 @@ export function CsvImportWizard({
         aantal: "",
         prijs: "",
         kosten: "",
+        dividendBedrag: "",
       };
       const fields: FieldName[] = [
         "type",
@@ -380,6 +390,16 @@ export function CsvImportWizard({
           }
         }
       }
+
+      // dividendBedrag: default to saved mapping or same column as prijs
+      const savedDividendCol = savedFieldMappings.dividendBedrag;
+      if (savedDividendCol && headers.includes(savedDividendCol)) {
+        result.dividendBedrag = savedDividendCol;
+      } else {
+        // Default: same as prijs column (empty string = use prijs)
+        result.dividendBedrag = "";
+      }
+
       return result;
     },
     [savedFieldMappings],
@@ -519,10 +539,12 @@ export function CsvImportWizard({
   };
 
   const goToStep5 = () => {
-    // Save all field mappings
+    // Save all field mappings (including dividendBedrag)
     for (const [field, col] of Object.entries(fieldMappingState)) {
       if (col) saveFieldMapping(field as FieldName, col);
     }
+    // Also save dividendBedrag even if empty (so it overrides stale saved value)
+    saveFieldMapping("dividendBedrag", fieldMappingState.dividendBedrag);
 
     // Init type translations from the type column
     if (parsedCsv && fieldMappingState.type) {
@@ -631,11 +653,33 @@ export function CsvImportWizard({
         transactionType === "ongoingCosts" ||
         transactionType === "stakingReward"
       ) {
-        // Use price × quantity if available, otherwise use price as direct euro value
-        if (pricePerUnit > 0 && quantity > 0) {
-          euroValue = pricePerUnit * quantity;
-        } else if (pricePerUnit > 0) {
-          euroValue = pricePerUnit;
+        if (
+          transactionType === "dividend" &&
+          fieldMappingState.dividendBedrag
+        ) {
+          // Use the dedicated dividend column
+          const rawDividend = parseNum(
+            row[fieldMappingState.dividendBedrag] ?? "",
+          );
+          euroValue = rawDividend;
+        } else if (transactionType === "dividend") {
+          // For dividend: use rawPrice directly as the received amount
+          // If prijsType === "totaal", rawPrice is already the total received amount
+          // If prijsType === "stuk", multiply by quantity if available
+          if (prijsType === "totaal") {
+            euroValue = rawPrice;
+          } else if (pricePerUnit > 0 && quantity > 0) {
+            euroValue = pricePerUnit * quantity;
+          } else {
+            euroValue = pricePerUnit;
+          }
+        } else {
+          // staking / ongoingCosts: use price × quantity if available, otherwise use price as direct euro value
+          if (pricePerUnit > 0 && quantity > 0) {
+            euroValue = pricePerUnit * quantity;
+          } else if (pricePerUnit > 0) {
+            euroValue = pricePerUnit;
+          }
         }
       }
 
@@ -644,10 +688,10 @@ export function CsvImportWizard({
       let errorReason: string | undefined;
       if (!date) {
         isValid = false;
-        errorReason = "Ongeldige datum";
+        errorReason = `Ongeldige datum: '${dateStr}'`;
       } else if (!transactionType) {
         isValid = false;
-        errorReason = "Type niet herkend";
+        errorReason = `Type niet herkend: '${csvTypeVal}'`;
       }
 
       // Duplicate detection: same date (day precision) + same ticker + same quantity (or euroValue for dividend/staking)
@@ -716,8 +760,11 @@ export function CsvImportWizard({
     }
 
     setIsImporting(true);
+    setImportErrorDetails([]);
     let importedCount = 0;
     let errorCount = 0;
+    const errorDetails: { ticker: string; dateStr: string; message: string }[] =
+      [];
 
     for (const row of toImport) {
       if (!row.date) continue;
@@ -743,8 +790,14 @@ export function CsvImportWizard({
           euroValue: isDividendLike ? row.euroValue : undefined,
         });
         importedCount++;
-      } catch {
+      } catch (e: unknown) {
         errorCount++;
+        const msg = e instanceof Error ? e.message : String(e);
+        errorDetails.push({
+          ticker: row.ticker,
+          dateStr: row.dateStr ?? formatPreviewDate(row.date),
+          message: msg,
+        });
       }
     }
 
@@ -753,18 +806,20 @@ export function CsvImportWizard({
     const skippedCount = editableRows.filter(
       (r) => !r.deleted && r.isDuplicate,
     ).length;
+
     if (errorCount > 0) {
+      setImportErrorDetails(errorDetails);
+      setImportErrorsExpanded(true);
       toast.error(
-        `${importedCount} geïmporteerd, ${skippedCount} overgeslagen, ${errorCount} fout`,
+        `${importedCount} geïmporteerd, ${skippedCount} overgeslagen, ${errorCount} mislukt`,
       );
     } else {
       toast.success(
         `${importedCount} transacties geïmporteerd, ${skippedCount} overgeslagen`,
       );
+      onOpenChange(false);
+      resetWizard();
     }
-
-    onOpenChange(false);
-    resetWizard();
   };
 
   // ─── Reset ────────────────────────────────────────────────────────────────
@@ -784,11 +839,15 @@ export function CsvImportWizard({
       aantal: "",
       prijs: "",
       kosten: "",
+      dividendBedrag: "",
     });
     setPrijsType("perStuk");
     setTypeTranslationState({});
     setEditableRows([]);
     setDuplicatesExpanded(false);
+    setInvalidRowsExpanded(false);
+    setImportErrorDetails([]);
+    setImportErrorsExpanded(false);
   };
 
   const handleOpenChange = (v: boolean) => {
@@ -1100,6 +1159,7 @@ export function CsvImportWizard({
       },
       { key: "kosten", label: "Transactiekosten", optional: true },
     ];
+    // dividendBedrag is handled separately below
 
     return (
       <div className="flex flex-col gap-4">
@@ -1226,6 +1286,61 @@ export function CsvImportWizard({
               </div>
             );
           })}
+
+          {/* Dividend ontvangen bedrag — only for stocks */}
+          {assetType === "stock" && (
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-muted/30 border border-border">
+                <div className="flex items-center gap-3">
+                  <div className="shrink-0">
+                    {fieldMappingState.dividendBedrag ? (
+                      <Check className="w-4 h-4 text-green-500" />
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </div>
+                  <div className="w-36 shrink-0">
+                    <span className="text-sm font-medium">Dividend bedrag</span>
+                    <span className="text-xs text-muted-foreground ml-1">
+                      (optioneel)
+                    </span>
+                  </div>
+                  <Select
+                    value={fieldMappingState.dividendBedrag || "__zelfde__"}
+                    onValueChange={(v) => {
+                      const val = v === "__zelfde__" ? "" : v;
+                      setFieldMappingState((prev) => ({
+                        ...prev,
+                        dividendBedrag: val,
+                      }));
+                    }}
+                  >
+                    <SelectTrigger
+                      className="flex-1 h-8 text-sm"
+                      data-ocid="csv.select"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__zelfde__">
+                        Zelfde als totaalbedrag-kolom (standaard)
+                      </SelectItem>
+                      {headers.map((h) => (
+                        <SelectItem key={h} value={h}>
+                          {h}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-xs text-muted-foreground pl-8">
+                  Standaard wordt de ingestelde totaalbedrag-kolom gebruikt als
+                  ontvangen dividendbedrag. Kies een andere kolom als het
+                  dividendbedrag in een aparte kolom staat.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1378,13 +1493,120 @@ export function CsvImportWizard({
             </p>
             <p className="text-xs text-muted-foreground">duplicaten</p>
           </div>
-          <div className="p-3 rounded-lg bg-muted/40 border border-border text-center">
-            <p className="text-2xl font-bold text-muted-foreground">
+          <div
+            className={cn(
+              "p-3 rounded-lg border text-center",
+              invalidRows.length > 0
+                ? "bg-destructive/10 border-destructive/30"
+                : "bg-muted/40 border-border",
+            )}
+          >
+            <p
+              className={cn(
+                "text-2xl font-bold",
+                invalidRows.length > 0
+                  ? "text-destructive"
+                  : "text-muted-foreground",
+              )}
+            >
               {invalidRows.length}
             </p>
             <p className="text-xs text-muted-foreground">ongeldig</p>
           </div>
         </div>
+
+        {/* Ongeldige regels detail panel */}
+        {invalidRows.length > 0 && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 overflow-hidden">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-destructive/10 transition-colors"
+              onClick={() => setInvalidRowsExpanded((v) => !v)}
+            >
+              <span className="flex items-center gap-2 font-medium text-destructive">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                Ongeldige regels ({invalidRows.length}) — worden niet
+                geïmporteerd
+              </span>
+              {invalidRowsExpanded ? (
+                <ChevronDown className="w-4 h-4 text-destructive/70" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-destructive/70" />
+              )}
+            </button>
+            {invalidRowsExpanded && (
+              <div className="px-3 pb-3 flex flex-col gap-2">
+                {invalidRows.map((row, idx) => (
+                  <div
+                    key={row.id}
+                    className="flex flex-col gap-0.5 p-2 rounded bg-destructive/10 text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-muted-foreground w-6 shrink-0">
+                        #{idx + 1}
+                      </span>
+                      <span className="font-mono font-semibold">
+                        {row.ticker || row.csvName}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {row.dateStr || formatPreviewDate(row.date)}
+                      </span>
+                    </div>
+                    <div className="pl-8 text-destructive font-medium">
+                      {row.errorReason ?? "Onbekende fout"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Import error details panel (shown after import with errors) */}
+        {importErrorDetails.length > 0 && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 overflow-hidden">
+            <button
+              type="button"
+              className="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-destructive/10 transition-colors"
+              onClick={() => setImportErrorsExpanded((v) => !v)}
+            >
+              <span className="flex items-center gap-2 font-medium text-destructive">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                Importfouten ({importErrorDetails.length}) — klik voor details
+              </span>
+              {importErrorsExpanded ? (
+                <ChevronDown className="w-4 h-4 text-destructive/70" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-destructive/70" />
+              )}
+            </button>
+            {importErrorsExpanded && (
+              <div className="px-3 pb-3 flex flex-col gap-2">
+                {importErrorDetails.map((err, idx) => (
+                  <div
+                    key={`${err.ticker}-${err.dateStr}-${idx}`}
+                    className="flex flex-col gap-0.5 p-2 rounded bg-destructive/10 text-xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-muted-foreground w-6 shrink-0">
+                        #{idx + 1}
+                      </span>
+                      <span className="font-mono font-semibold">
+                        {err.ticker}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {err.dateStr}
+                      </span>
+                    </div>
+                    <div className="pl-8 text-destructive font-medium">
+                      {err.message}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {toImportRows.length === 0 && duplicateRows.length === 0 ? (
           <div
@@ -1401,7 +1623,162 @@ export function CsvImportWizard({
                   Controleer en pas de gegevens aan voor de import. Je kunt
                   waarden bewerken of regels verwijderen.
                 </p>
-                <div className="overflow-x-auto overflow-y-auto max-h-[350px] rounded-lg border border-border">
+
+                {/* ── Mobile card view (< md) ─────────────────────────── */}
+                <div className="md:hidden flex flex-col gap-2 max-h-[45vh] overflow-y-auto">
+                  {toImportRows.map((row, idx) => (
+                    <div
+                      key={row.id}
+                      className="rounded-lg border border-border bg-muted/20 p-3 flex flex-col gap-2"
+                      data-ocid={`csv.row.${idx + 1}`}
+                    >
+                      {/* Top line: date | type | delete */}
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="text"
+                          value={row.dateStr}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const parsed = parseDateStr(val);
+                            updateEditableRow(row.id, {
+                              dateStr: val,
+                              date: parsed,
+                              isValid: !!parsed,
+                              errorReason: parsed
+                                ? undefined
+                                : `Ongeldige datum: '${val}'`,
+                            });
+                          }}
+                          placeholder="DD-MM-YYYY"
+                          className="h-7 text-xs px-2 font-mono w-[100px] shrink-0"
+                        />
+                        <Select
+                          value={row.transactionType}
+                          onValueChange={(v) =>
+                            updateEditableRow(row.id, { transactionType: v })
+                          }
+                        >
+                          <SelectTrigger className="h-7 text-xs px-2 flex-1">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {typeOptions.map((opt) => (
+                              <SelectItem
+                                key={opt.value}
+                                value={opt.value}
+                                className="text-xs"
+                              >
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => deleteEditableRow(row.id)}
+                          data-ocid={`csv.delete_button.${idx + 1}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+
+                      {/* Middle line: asset */}
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-xs font-semibold">
+                          {row.ticker}
+                        </span>
+                        <span className="text-xs text-muted-foreground truncate">
+                          {row.assetName}
+                        </span>
+                      </div>
+
+                      {/* Bottom line: inputs */}
+                      {isDividendLikeType(row.transactionType) ? (
+                        <div className="flex flex-col gap-1">
+                          <Label className="text-xs text-muted-foreground">
+                            Bedrag (€)
+                          </Label>
+                          <Input
+                            type="number"
+                            step="any"
+                            value={row.euroValue === 0 ? "" : row.euroValue}
+                            onChange={(e) =>
+                              updateEditableRow(row.id, {
+                                euroValue:
+                                  Number.parseFloat(e.target.value) || 0,
+                              })
+                            }
+                            className="h-7 text-xs px-2 font-mono"
+                            placeholder="€"
+                          />
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="flex flex-col gap-1">
+                            <Label className="text-xs text-muted-foreground">
+                              Aantal
+                            </Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={row.quantity === 0 ? "" : row.quantity}
+                              onChange={(e) =>
+                                updateEditableRow(row.id, {
+                                  quantity:
+                                    Number.parseFloat(e.target.value) || 0,
+                                })
+                              }
+                              className="h-7 text-xs px-2 font-mono"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <Label className="text-xs text-muted-foreground">
+                              Prijs (€)
+                            </Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={
+                                row.pricePerUnit === 0 ? "" : row.pricePerUnit
+                              }
+                              onChange={(e) =>
+                                updateEditableRow(row.id, {
+                                  pricePerUnit:
+                                    Number.parseFloat(e.target.value) || 0,
+                                })
+                              }
+                              className="h-7 text-xs px-2 font-mono"
+                              placeholder="€"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <Label className="text-xs text-muted-foreground">
+                              Kosten
+                            </Label>
+                            <Input
+                              type="number"
+                              step="any"
+                              value={row.fees === 0 ? "" : row.fees}
+                              onChange={(e) =>
+                                updateEditableRow(row.id, {
+                                  fees: Number.parseFloat(e.target.value) || 0,
+                                })
+                              }
+                              className="h-7 text-xs px-2 font-mono"
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* ── Desktop table view (md+) ────────────────────────── */}
+                <div className="hidden md:block max-h-[45vh] overflow-y-auto overflow-x-auto rounded-lg border border-border">
                   <Table>
                     <TableHeader className="sticky top-0 bg-card z-10">
                       <TableRow>
@@ -1447,7 +1824,7 @@ export function CsvImportWizard({
                                   isValid: !!parsed,
                                   errorReason: parsed
                                     ? undefined
-                                    : "Ongeldige datum",
+                                    : `Ongeldige datum: '${val}'`,
                                 });
                               }}
                               placeholder="DD-MM-YYYY"
@@ -1703,7 +2080,7 @@ export function CsvImportWizard({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="sm:max-w-2xl max-h-[90vh] flex flex-col"
+        className="w-full sm:max-w-3xl max-h-[95vh] sm:max-h-[90vh] flex flex-col"
         data-ocid="csv.dialog"
       >
         <DialogHeader>

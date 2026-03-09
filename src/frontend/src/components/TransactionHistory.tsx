@@ -266,9 +266,17 @@ export function TransactionHistory({
                       )}
                     </td>
                     <td className="py-2.5 pr-4 text-right num">
-                      {tx.transactionType === TransactionType.stakingReward ||
-                      tx.transactionType === TransactionType.dividend ||
-                      isOngoingCostsType(tx.transactionType) ? (
+                      {tx.transactionType === TransactionType.dividend ? (
+                        tx.euroValue !== undefined && tx.euroValue > 0 ? (
+                          <span className="text-green-500">
+                            {formatEuro(tx.euroValue)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )
+                      ) : tx.transactionType ===
+                          TransactionType.stakingReward ||
+                        isOngoingCostsType(tx.transactionType) ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
                         formatEuro(tx.quantity * tx.pricePerUnit)

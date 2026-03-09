@@ -32,7 +32,13 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
-export type FieldName = "type" | "datum" | "aantal" | "prijs" | "kosten";
+export type FieldName =
+  | "type"
+  | "datum"
+  | "aantal"
+  | "prijs"
+  | "kosten"
+  | "dividendBedrag";
 
 export interface CsvImportMappings {
   /** Known name column names (case-insensitive match key → true) */
@@ -68,6 +74,7 @@ export function useCSVImportMappings(): UseCsvImportMappingsReturn {
         aantal: "",
         prijs: "",
         kosten: "",
+        dividendBedrag: "",
       }),
   );
   const [typeTranslations, setTypeTranslations] = useState<
@@ -122,6 +129,7 @@ export function useCSVImportMappings(): UseCsvImportMappingsReturn {
       aantal: "",
       prijs: "",
       kosten: "",
+      dividendBedrag: "",
     });
     setTypeTranslations({});
     localStorage.removeItem(NAME_COLUMNS_KEY);
